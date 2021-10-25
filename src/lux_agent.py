@@ -41,7 +41,7 @@ class LuxAgent(AgentWithModel):
         self.action_space = spaces.Discrete(max(len(self.unit_actions), len(self.city_actions)))
 
         # Initialize observations
-        self.observation_shape = (57,)
+        self.observation_shape = OBSERVATION_SHAPE
         self.observation_space = spaces.Box(low=0, high=1, shape=self.observation_shape, dtype=np.float16)
 
         self.object_nodes = {}

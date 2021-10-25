@@ -5,6 +5,7 @@ from datetime import datetime
 NUM_IDENTIFIERS = 3
 NUM_GAME_STATES = 12
 NUM_RESOURCES = 42
+OBSERVATION_SHAPE = (NUM_IDENTIFIERS + NUM_GAME_STATES + NUM_RESOURCES,)
 
 # Observation Constants
 MAX_RESEARCH = 200.0
@@ -23,7 +24,7 @@ GAE_LAMBDA = 0.95
 BATCH_SIZE = 2048
 MAX_STEPS = 10_000_000
 NUM_STEPS = BATCH_SIZE
-NUM_ENVS = 32
+NUM_ENVS = 64
 
 # File paths
 TIME_STAMP = datetime.now().strftime('%m-%d_%H-%M-%S')

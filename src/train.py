@@ -25,7 +25,7 @@ def train():
         return LuxEnvironment(
             configs=configs,
             learning_agent=LuxAgent(mode="train"),
-            opponent_agent=Agent()
+            opponent_agent=LuxAgent(mode="train")
         )
 
     if NUM_ENVS > 1:
