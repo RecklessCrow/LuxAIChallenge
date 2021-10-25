@@ -1,18 +1,18 @@
-from functools import partial
-
 import numpy as np
 from gym import spaces
-from luxai2021.game.position import Position
 
 from constants import *
 from luxai2021.env.agent import AgentWithModel
 from luxai2021.game.actions import *
+from functools import partial
+
 from luxai2021.game.game_constants import GAME_CONSTANTS
+from luxai2021.game.position import Position
 
 
 class LuxAgent(AgentWithModel):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+    def __init__(self, mode="train", model=None):
+        super().__init__(mode, model)
 
         # Initialize actions
         self.unit_actions = [
@@ -46,7 +46,7 @@ class LuxAgent(AgentWithModel):
 
         self.object_nodes = {}
 
-        # Initialize Reward Tracking
+    def game_start(self, game):
         self.last_unit_count = 0
         self.last_city_tile_count = 0
         self.last_fuel_collected = 0
@@ -87,11 +87,10 @@ class LuxAgent(AgentWithModel):
                     self.object_nodes[key] = np.array([[cells.pos.x, cells.pos.y]])
                 else:
                     self.object_nodes[key] = np.concatenate(
-                        (self.object_nodes[key], [[cells.pos.x, cells.pos.y]]), axis=0)
+                        (self.object_nodes[key],[[cells.pos.x, cells.pos.y]]), axis=0)
 
     @staticmethod
-    def distance(node: Position, nodes):
-        node = (node.x, node.y)
+    def distance(node, nodes):
         return np.sum((nodes - node) ** 2, axis=1)
 
     @staticmethod
@@ -230,65 +229,43 @@ class LuxAgent(AgentWithModel):
             str(Constants.UNIT_TYPES.CART): 1
         }
 
-        entity_detection = np.zeros(NUM_RESOURCES)
-        entity_idx = 0
+        entity_detection = []
 
-        for idx, (entity_type, quantity) in enumerate(types.items()):
-            if entity_type in self.object_nodes:
+        for type in types.keys():
+            if type not in self.object_nodes:
+                sorted_idx = np.array([])
+            else:
+                nodes = self.object_nodes[type]
+                sorted_idx = np.argsort(self.distance(np.array([unit_pos.x, unit_pos.y]), nodes))
 
-                nodes = self.object_nodes[entity_type]
-                sorted_idx = np.argsort(self.distance(unit_pos, nodes))
-
-                if (unit is not None and unit.type == entity_type) or (entity_type == "city" and city_tile is not None):
+                if unit is not None and unit.type == type or type == "city" and city_tile is not None:
                     sorted_idx = np.delete(sorted_idx, 0)
 
-                if len(nodes) == 0:
+            n_closest_units = []
+            for i in range(types[type]):
+                if i >= sorted_idx.size:
+                    n_closest_units.append(np.array([0, 0, 0]))
                     continue
 
-                for i in range(quantity):
+                other_pos = nodes[sorted_idx[i]]
 
-                    if i + 1 > len(sorted_idx):
-                        entity_idx += 3
-                        continue
+                # 1x angle theta
+                angle = np.arctan2(other_pos[1] - unit_pos.y, other_pos[0] - unit_pos.x)
 
-                    node_idx = sorted_idx[i] if len(sorted_idx) > 0 else 0
-                    other_pos = nodes[node_idx]
-                    other_pos = Position(other_pos[0], other_pos[1])
+                # 1x distance
+                distance = np.sqrt((other_pos[0] - unit_pos.x)**2 + (other_pos[1] - unit_pos.y)**2)
 
-                    # 1x angle theta
-                    angle = np.arctan2(other_pos.y - unit_pos.y, other_pos.x - unit_pos.x)
-                    entity_detection[entity_idx] = angle
-                    entity_idx += 1
+                # 1x amount
+                other_cell = game.map.get_cell_by_pos(Position(other_pos[0], other_pos[1]))
+                cargo_amount = self.get_cargo(game, other_cell, type)
 
-                    # 1x distance
-                    distance = np.sqrt((other_pos.x - unit_pos.x)**2 + (other_pos.y - unit_pos.y)**2)
-                    entity_detection[entity_idx] = distance
-                    entity_idx += 1
+                n_closest_units.append(np.array([angle, distance, cargo_amount]))
 
-                    # 1x amount
-                    cell = game.map.get_cell_by_pos(other_pos)
-                    cargo_amount = self.get_cargo(game, cell, entity_type)
-                    entity_detection[entity_idx] = cargo_amount
-                    entity_idx += 1
+            entity_detection.append(np.concatenate(n_closest_units))
 
-        # entity_detection = np.concatenate(entity_detection)
+        entity_detection = np.concatenate(entity_detection)
 
         return np.concatenate([turn_identifier, game_states, entity_detection])
-
-    def game_start(self, game):
-        """
-        This function is called at the start of each game. Use this to
-        reset and initialize per game. Note that self.team may have
-        been changed since last game. The game map has been created
-        and starting units placed.
-        Args:
-            game ([type]): Game.
-        """
-
-        # Reset reward tracking
-        self.last_unit_count = 0
-        self.last_city_tile_count = 0
-        self.last_fuel_collected = 0
 
     def get_reward(self, game, game_over: bool, is_new_turn: bool, game_errored: bool) -> float:
         """
@@ -386,6 +363,12 @@ class LuxAgent(AgentWithModel):
             '''
 
         reward = 0.0
+
+        if city_growth < 0:
+            reward += city_growth * CITY_REWARD_MODIFIER * 0.5
+
+        if unit_growth < 0:
+            reward += unit_growth * UNIT_REWARD_MODIFIER * 0.5
 
         reward += city_growth * CITY_REWARD_MODIFIER
         reward += unit_growth * UNIT_REWARD_MODIFIER
