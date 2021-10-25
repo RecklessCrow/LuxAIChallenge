@@ -211,10 +211,10 @@ class LuxAgent(AgentWithModel):
          - 1x distance
          - 1x amount fuel
         
-        Resources - 27x:
+        Resources - 48x:
         - 3x per resource 
          - 3x for 3 nearest resource piles
-          - 1x angle theta
+          - 2x [vector direction]
           - 1x distance
           - 1x amount
          
@@ -244,13 +244,26 @@ class LuxAgent(AgentWithModel):
             n_closest_units = []
             for i in range(types[type]):
                 if i >= sorted_idx.size:
-                    n_closest_units.append(np.array([0, 0, 0]))
+                    n_closest_units.append(np.array([0, 0, 0, 0]))
                     continue
 
                 other_pos = nodes[sorted_idx[i]]
 
-                # 1x angle theta
-                angle = np.arctan2(other_pos[1] - unit_pos.y, other_pos[0] - unit_pos.x)
+                # 2x [vector direction]
+                # angle = np.arctan2(other_pos[1] - unit_pos.y, other_pos[0] - unit_pos.x)
+                if other_pos[0] - unit_pos.x == 0:
+                    x_diff = .5
+                elif other_pos[0] - unit_pos.x > 0:
+                    x_diff = 1
+                else:
+                    x_diff = 0
+
+                if other_pos[1] - unit_pos.y == 0:
+                    y_diff = .5
+                elif other_pos[1] - unit_pos.y > 0:
+                    y_diff = 1
+                else:
+                    y_diff = 0
 
                 # 1x distance
                 distance = np.sqrt((other_pos[0] - unit_pos.x)**2 + (other_pos[1] - unit_pos.y)**2)
@@ -259,7 +272,7 @@ class LuxAgent(AgentWithModel):
                 other_cell = game.map.get_cell_by_pos(Position(other_pos[0], other_pos[1]))
                 cargo_amount = self.get_cargo(game, other_cell, type)
 
-                n_closest_units.append(np.array([angle, distance, cargo_amount]))
+                n_closest_units.append(np.array([x_diff, y_diff, distance, cargo_amount]))
 
             entity_detection.append(np.concatenate(n_closest_units))
 
@@ -365,10 +378,10 @@ class LuxAgent(AgentWithModel):
         reward = 0.0
 
         if city_growth < 0:
-            reward += city_growth * CITY_REWARD_MODIFIER * 0.5
+            reward += city_growth * CITY_REWARD_MODIFIER
 
         if unit_growth < 0:
-            reward += unit_growth * UNIT_REWARD_MODIFIER * 0.5
+            reward += unit_growth * UNIT_REWARD_MODIFIER
 
         reward += city_growth * CITY_REWARD_MODIFIER
         reward += unit_growth * UNIT_REWARD_MODIFIER

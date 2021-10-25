@@ -4,7 +4,7 @@ from datetime import datetime
 # Observation Vector Sizes
 NUM_IDENTIFIERS = 3
 NUM_GAME_STATES = 12
-NUM_RESOURCES = 42 - 6
+NUM_RESOURCES = 48
 OBSERVATION_SHAPE = (NUM_IDENTIFIERS + NUM_GAME_STATES + NUM_RESOURCES,)
 
 # Observation Constants
