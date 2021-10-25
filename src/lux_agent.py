@@ -1,18 +1,18 @@
-import numpy as np
-from gym import spaces
-
-from luxai2021.env.agent import AgentWithModel
-from luxai2021.game.actions import *
 from functools import partial
 
-from luxai2021.game.game_constants import GAME_CONSTANTS
+import numpy as np
+from gym import spaces
+from luxai2021.game.position import Position
 
 from constants import *
+from luxai2021.env.agent import AgentWithModel
+from luxai2021.game.actions import *
+from luxai2021.game.game_constants import GAME_CONSTANTS
 
 
 class LuxAgent(AgentWithModel):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
 
         # Initialize actions
         self.unit_actions = [
@@ -23,9 +23,9 @@ class LuxAgent(AgentWithModel):
             partial(MoveAction, direction=Constants.DIRECTIONS.EAST),
 
             # Transfer to nearby cart
-            partial(TransferAction, target_type_restriction=Constants.UNIT_TYPES.CART),
+            # partial(TransferAction, target_type_restriction=Constants.UNIT_TYPES.CART),
             # Transfer to nearby worker
-            partial(TransferAction, target_type_restriction=Constants.UNIT_TYPES.WORKER),
+            # partial(TransferAction, target_type_restriction=Constants.UNIT_TYPES.WORKER),
 
             SpawnCityAction,
             PillageAction,
@@ -89,26 +89,29 @@ class LuxAgent(AgentWithModel):
                         (self.object_nodes[key], [[cells.pos.x, cells.pos.y]]), axis=0)
 
     @staticmethod
-    def distance(node, nodes):
+    def distance(node: Position, nodes):
+        node = (node.x, node.y)
         return np.sum((nodes - node) ** 2, axis=1)
 
     @staticmethod
-    def get_cargo(cell, unit_type, city_tile):
+    def get_cargo(game, cell, unit_type):
+
+        # cargo_amount = self.get_cargo(game.map.get_cell_by_pos(other_pos), entity_type, city_tile)
+        RESOURCE_LIST = [Constants.RESOURCE_TYPES.WOOD, Constants.RESOURCE_TYPES.COAL, Constants.RESOURCE_TYPES.URANIUM]
+
         if unit_type == "city":
             # City fuel as % of upkeep for 200 turns
-            c = cell.cities[city_tile.city_id]
+            c = game.cities[cell.city_tile.city_id]
             return min(c.fuel / (c.get_light_upkeep() * 200.0), 1.0)
 
-        elif unit_type in \
-                [Constants.RESOURCE_TYPES.WOOD, Constants.RESOURCE_TYPES.COAL, Constants.RESOURCE_TYPES.URANIUM]:
-            # Resource amount
+        elif unit_type in RESOURCE_LIST:
             return min(cell.resource.amount / 500, 1.0)
 
         else:
             # Unit cargo
             return min(next(iter(cell.units.values())).get_cargo_space_left() / 100, 1.0)
 
-    def get_observation(self, game, unit, city_tile, team, is_new_turn):
+    def get_observation(self, game, unit, city_tile, team, is_new_turn: bool):
         """
         Implements getting a observation from the current game for this unit or city
         """
@@ -226,7 +229,8 @@ class LuxAgent(AgentWithModel):
             str(Constants.UNIT_TYPES.CART): 1
         }
 
-        entity_detection = []
+        entity_detection = np.zeros(NUM_RESOURCES)
+        entity_idx = 0
 
         for idx, (entity_type, quantity) in enumerate(types.items()):
             if entity_type in self.object_nodes:
@@ -234,30 +238,39 @@ class LuxAgent(AgentWithModel):
                 nodes = self.object_nodes[entity_type]
                 sorted_idx = np.argsort(self.distance(unit_pos, nodes))
 
-                if unit.type == entity_type or entity_type == "city" and city_tile is not None:
+                if (unit is not None and unit.type == entity_type) or (entity_type == "city" and city_tile is not None):
                     sorted_idx = np.delete(sorted_idx, 0)
 
                 if len(nodes) == 0:
                     continue
 
-                n_closest_units = []
                 for i in range(quantity):
-                    other_pos = nodes[sorted_idx[i]]
+
+                    if i + 1 > len(sorted_idx):
+                        entity_idx += 3
+                        continue
+
+                    node_idx = sorted_idx[i] if len(sorted_idx) > 0 else 0
+                    other_pos = nodes[node_idx]
+                    other_pos = Position(other_pos[0], other_pos[1])
 
                     # 1x angle theta
-                    angle = np.arctan2(other_pos[1] - unit_pos[1], other_pos[0] - unit_pos[0])
+                    angle = np.arctan2(other_pos.y - unit_pos.y, other_pos.x - unit_pos.x)
+                    entity_detection[entity_idx] = angle
+                    entity_idx += 1
 
                     # 1x distance
-                    distance = np.sqrt(other_pos[0] - unit_pos[0] + other_pos[1] - unit_pos[1])
+                    distance = np.sqrt((other_pos.x - unit_pos.x)**2 + (other_pos.y - unit_pos.y)**2)
+                    entity_detection[entity_idx] = distance
+                    entity_idx += 1
 
                     # 1x amount
-                    cargo_amount = self.get_cargo(game.map.get_cell_by_pos(other_pos), entity_type, city_tile)
+                    cell = game.map.get_cell_by_pos(other_pos)
+                    cargo_amount = self.get_cargo(game, cell, entity_type)
+                    entity_detection[entity_idx] = cargo_amount
+                    entity_idx += 1
 
-                    n_closest_units.append(np.array([angle, distance, cargo_amount]))
-
-                entity_detection.append(np.concatenate(n_closest_units))
-
-        entity_detection = np.concatenate(entity_detection)
+        # entity_detection = np.concatenate(entity_detection)
 
         return np.concatenate([turn_identifier, game_states, entity_detection])
 

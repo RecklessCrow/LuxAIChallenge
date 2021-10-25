@@ -28,7 +28,8 @@ class SaveReplayAndModelCallback(BaseCallback):
     :param verbose:
     """
 
-    def __init__(self, save_freq: int, save_path: str, replay_env, replay_num_episodes=5, name_prefix: str = "rl_model", verbose: int = 0):
+    def __init__(self, save_freq: int, save_path: str, replay_env, replay_num_episodes=5, name_prefix: str = "rl_model",
+                 verbose: int = 0):
         super(SaveReplayAndModelCallback, self).__init__(verbose)
         self.save_freq = save_freq
         self.save_path = save_path
@@ -47,14 +48,14 @@ class SaveReplayAndModelCallback(BaseCallback):
             # Save the model
             path = os.path.join(self.save_path, f"{self.name_prefix}_step{self.num_timesteps}")
             self.model.save(path)
-            
+
             # Run a bunch of games to creates replays using the replay environment
             for i in range(self.replay_num_episodes):
                 self.replay_env.game.configs["seed"] = i
                 self.replay_env.set_replay_path(self.save_path, f"{self.name_prefix}_step{self.num_timesteps}_seed{i}")
 
                 try:
-                    self.replay_env.reset() # Runs  a whole game because no training agent is attached
+                    self.replay_env.reset()  # Runs  a whole game because no training agent is attached
                 except StopIteration:
                     # Game finished successfully
                     pass
@@ -64,11 +65,11 @@ class SaveReplayAndModelCallback(BaseCallback):
                     print(repr(e))
                     print(''.join(traceback.format_exception(None, e, e.__traceback__)))
                     pass
-                
-            
+
             if self.verbose > 1:
                 print(f"Saved model checkpoint and replay to {path}")
         return True
+
 
 class LuxEnvironment(gym.Env):
     """
@@ -76,7 +77,8 @@ class LuxEnvironment(gym.Env):
     """
     metadata = {'render.modes': ['human']}
 
-    def __init__(self, configs, learning_agent, opponent_agent, replay_validate=None, replay_folder=None, replay_prefix="replay"):
+    def __init__(self, configs, learning_agent, opponent_agent, replay_validate=None, replay_folder=None,
+                 replay_prefix="replay"):
         """
         THe initializer
         :param configs:
@@ -87,20 +89,19 @@ class LuxEnvironment(gym.Env):
 
         # Create the game
         self.game = Game(configs)
-        self.match_controller = MatchController(self.game, 
-                                                agents=[learning_agent, opponent_agent], 
+        self.match_controller = MatchController(self.game,
+                                                agents=[learning_agent, opponent_agent],
                                                 replay_validate=replay_validate)
-        
+
         self.replay_prefix = replay_prefix
         self.replay_folder = replay_folder
 
-
         self.action_space = []
-        if hasattr( learning_agent, 'action_space' ):
+        if hasattr(learning_agent, 'action_space'):
             self.action_space = learning_agent.action_space
-        
+
         self.observation_space = {}
-        if hasattr( learning_agent, 'observation_space' ):
+        if hasattr(learning_agent, 'observation_space'):
             self.observation_space = learning_agent.observation_space
 
         self.learning_agent = learning_agent
@@ -172,7 +173,8 @@ class LuxEnvironment(gym.Env):
         self.match_controller.reset()
         if self.replay_folder:
             # Tell the game to log replays
-            self.game.start_replay_logging(stateful=True, replay_folder=self.replay_folder, replay_filename_prefix=self.replay_prefix)
+            self.game.start_replay_logging(stateful=True, replay_folder=self.replay_folder,
+                                           replay_filename_prefix=self.replay_prefix)
 
         self.match_generator = self.match_controller.run_to_next_observation()
         (unit, city_tile, team, is_new_turn) = next(self.match_generator)
