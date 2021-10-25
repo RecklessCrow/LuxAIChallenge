@@ -198,6 +198,7 @@ class LuxEnvironment(gym.Env):
         Steps until the environment is "done".
         Both agents have to be in inference mode
         """
+        is_game_error = False
 
         for agent in self.match_controller.agents:
             assert agent.get_agent_type() == Constants.AGENT_TYPE.AGENT, "Both agents must be in inference mode"

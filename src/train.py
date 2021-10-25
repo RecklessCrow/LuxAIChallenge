@@ -1,31 +1,12 @@
-import copy
-
 from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import EvalCallback
-from stable_baselines3.common.utils import set_random_seed
-from stable_baselines3.common.vec_env import SubprocVecEnv
+from stable_baselines3.common.env_util import make_vec_env
 
 from constants import *
 from lux_agent import LuxAgent
 from luxai2021.env.agent import Agent
 from luxai2021.env.lux_env import LuxEnvironment, SaveReplayAndModelCallback
 from luxai2021.game.constants import LuxMatchConfigs_Default
-
-
-def make_env(local_env, rank, seed=0):
-    """
-    Utility function for multi-processed env.
-    :param local_env: (LuxEnvironment) the environment
-    :param seed: (int) the initial seed for RNG
-    :param rank: (int) index of the subprocess
-    """
-
-    def _init():
-        local_env.seed(seed + rank)
-        return local_env
-
-    set_random_seed(seed)
-    return _init
 
 
 def train():
@@ -35,26 +16,22 @@ def train():
     """
 
     # Create agents
-    player = LuxAgent(mode="train")
-    opponent = Agent()
+    # trained_model = PPO.load(SAVED_MODEL_PATH)
 
     # Create Environment
     configs = LuxMatchConfigs_Default
 
-    if NUM_ENVS > 1:
-        train_env = SubprocVecEnv([make_env(
-            LuxEnvironment(
-                configs=configs,
-                learning_agent=copy.deepcopy(player),
-                opponent_agent=copy.deepcopy(opponent)
-            ), i) for i in range(NUM_ENVS)]
-        )
-    else:
-        train_env = LuxEnvironment(
+    def make_env():
+        return LuxEnvironment(
             configs=configs,
-            learning_agent=player,
-            opponent_agent=opponent
+            learning_agent=LuxAgent(mode="train"),
+            opponent_agent=Agent()
         )
+
+    if NUM_ENVS > 1:
+        train_env = make_vec_env(make_env, NUM_ENVS)
+    else:
+        train_env = make_env()
 
     # Create Model
     model = PPO(
@@ -92,16 +69,13 @@ def train():
     # Since reward metrics don't work for multi-environment setups, we add an evaluation logger
     # for metrics.
     if NUM_ENVS > 1:
+        num_eval_envs = 4
         # An evaluation environment is needed to measure multi-env setups. Use a fixed 4 envs.
-        env_eval = SubprocVecEnv([make_env(LuxEnvironment(
-            configs=configs,
-            learning_agent=LuxAgent(mode="train"),
-            opponent_agent=opponent), i) for i in range(4)]
-        )
+        eval_env = make_vec_env(make_env, num_eval_envs)
 
         callbacks.append(
             EvalCallback(
-                env_eval,
+                eval_env,
                 best_model_save_path=f'./logs_{TIME_STAMP}/',
                 log_path=f'./logs_{TIME_STAMP}/',
                 eval_freq=NUM_STEPS * 2,  # Run it every 2 training iterations
@@ -122,20 +96,33 @@ def train():
 
     print("Done training model.")
 
-    # Inference the model
-    # eval_env = LuxEnvironment()
+    evaluate(model)
 
-    obs = train_env.reset()
+
+def evaluate(model=None):
+
+    player = LuxAgent(model=model)
+    opponent = LuxAgent(model=PPO.load(SAVED_MODEL_PATH))
+
+    configs = LuxMatchConfigs_Default
+
+    eval_env = LuxEnvironment(
+        configs=configs,
+        learning_agent=player,
+        opponent_agent=opponent
+    )
+
+    obs = eval_env.reset()
     for i in range(600):
         action_code, _states = model.predict(obs, deterministic=True)
-        obs, rewards, done, info = train_env.step(action_code)
+        obs, rewards, done, info = eval_env.step(action_code)
         if i % 5 == 0:
-            print("Turn %i" % i)
-            train_env.render()
+            print(f"Turn {i}")
+            eval_env.render()
 
         if done:
             print("Episode done, resetting.")
-            obs = train_env.reset()
+            obs = eval_env.reset()
     print("Done")
 
     '''

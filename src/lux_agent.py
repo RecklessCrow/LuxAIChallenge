@@ -16,7 +16,7 @@ class LuxAgent(AgentWithModel):
 
         # Initialize actions
         self.unit_actions = [
-            partial(MoveAction, direction=Constants.DIRECTIONS.CENTER),  # This is the do-nothing action
+            partial(MoveAction, direction=Constants.DIRECTIONS.CENTER),  # No Op
             partial(MoveAction, direction=Constants.DIRECTIONS.NORTH),
             partial(MoveAction, direction=Constants.DIRECTIONS.WEST),
             partial(MoveAction, direction=Constants.DIRECTIONS.SOUTH),

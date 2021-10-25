@@ -1,9 +1,10 @@
-from train import train
+from train import train, evaluate
 from multiprocessing import freeze_support
 
 
 def main():
     train()
+    # evaluate()
 
 
 if __name__ == '__main__':

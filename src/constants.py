@@ -12,8 +12,8 @@ MAX_UNIT_COUNT = 30
 
 # Reward Constants
 CITY_REWARD_MODIFIER = 0.1
-UNIT_REWARD_MODIFIER = 0.5
-FUEL_REWARD_MODIFIER = 0.001
+UNIT_REWARD_MODIFIER = 0.05
+FUEL_REWARD_MODIFIER = 1 / 20_000
 LEAD_REWARD_MODIFIER = 1
 
 # Hyper Parameters
@@ -23,7 +23,7 @@ GAE_LAMBDA = 0.95
 BATCH_SIZE = 2048
 MAX_STEPS = 10_000_000
 NUM_STEPS = BATCH_SIZE
-NUM_ENVS = 1
+NUM_ENVS = 32
 
 # File paths
 TIME_STAMP = datetime.now().strftime('%m-%d_%H-%M-%S')
@@ -36,3 +36,4 @@ LOGS_PATH = os.path.join("..", "logs")
 
 MODEL_CHECKPOINT_PATH = os.path.join(CHECKPOINT_PATH, TIME_STAMP)
 MODEL_PATH = os.path.join("..", "models", f"{TIME_STAMP}.zip")
+SAVED_MODEL_PATH = os.path.join("..", "models", "10-25_11-34-24.zip")
