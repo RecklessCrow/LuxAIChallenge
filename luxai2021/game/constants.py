@@ -40,11 +40,12 @@ class Constants:
         RANDOM = 'random'
         DEBUG = 'debug'
 
-    # Mirrored Game constant enums. All the available agent actions with specifications as to what they do and restrictions.
+    # Mirrored Game constant enums. All the available agent actions with specifications as to what they do and
+    # restrictions.
     class ACTIONS:
         #
-        # Formatted as `m unit_id direction`. unit_id should be valid and should have empty space in that direction. moves
-        # unit with id unit_id in the direction
+        # Formatted as `m unit_id direction`. unit_id should be valid and should have empty space in that direction.
+        # moves unit with id unit_id in the direction
         #
         MOVE = 'm'
         #

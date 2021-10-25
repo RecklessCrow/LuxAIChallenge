@@ -7,11 +7,14 @@ from functools import partial
 
 from luxai2021.game.game_constants import GAME_CONSTANTS
 
+from constants import *
+
 
 class LuxAgent(AgentWithModel):
     def __init__(self):
         super().__init__()
 
+        # Initialize actions
         self.unit_actions = [
             partial(MoveAction, direction=Constants.DIRECTIONS.CENTER),  # This is the do-nothing action
             partial(MoveAction, direction=Constants.DIRECTIONS.NORTH),
@@ -36,10 +39,16 @@ class LuxAgent(AgentWithModel):
 
         self.action_space = spaces.Discrete(max(len(self.unit_actions), len(self.city_actions)))
 
-        self.observation_shape = 51
+        # Initialize observations
+        self.observation_shape = (57,)
         self.observation_space = spaces.Box(low=0, high=1, shape=self.observation_shape, dtype=np.float16)
 
         self.object_nodes = {}
+
+        # Initialize Reward Tracking
+        self.last_unit_count = 0
+        self.last_city_tile_count = 0
+        self.last_fuel_collected = 0
 
     def get_map_contents(self, game, team):
         # Build a list of object nodes by type for quick distance-searches
@@ -77,7 +86,7 @@ class LuxAgent(AgentWithModel):
                     self.object_nodes[key] = np.array([[cells.pos.x, cells.pos.y]])
                 else:
                     self.object_nodes[key] = np.concatenate(
-                        (self.object_nodes[key],[[cells.pos.x, cells.pos.y]]), axis=0)
+                        (self.object_nodes[key], [[cells.pos.x, cells.pos.y]]), axis=0)
 
     @staticmethod
     def distance(node, nodes):
@@ -107,27 +116,25 @@ class LuxAgent(AgentWithModel):
         if is_new_turn:
             self.get_map_contents(game, team)
 
-
         """
         Features/Objects in Vector
         
-        Turn Identifier
+        Turn Identifier  - 3x:
          - 1x Worker
          - 1x Cart
          - 1x City
          """
-
-        turn_identifier = np.zeros(3)
+        turn_identifier = np.zeros(NUM_IDENTIFIERS)
         if unit is not None:
             if unit.type == Constants.UNIT_TYPES.WORKER:
-                turn_identifier[0] = 1  # Worker
+                turn_identifier[0] = 1.0  # Worker
             else:
                 turn_identifier[1] = 1.0  # Cart
         if city_tile is not None:
             turn_identifier[2] = 1.0  # CityTile
 
         """
-        Game State
+        Game State - 12x:
          - 1x cargo size
          - 1x is night
          - 1x percent of game done
@@ -140,7 +147,7 @@ class LuxAgent(AgentWithModel):
          - 1x researched uranium [cur player]
         """
 
-        game_states = np.zeros(12)
+        game_states = np.zeros(NUM_GAME_STATES)
 
         # 1x cargo size
         if unit is not None:
@@ -153,15 +160,14 @@ class LuxAgent(AgentWithModel):
         game_states[2] = game.state["turn"] / GAME_CONSTANTS["PARAMETERS"]["MAX_DAYS"]
 
         # 6x unit counts
-        max_count = 30
         for idx, key in enumerate(["city", str(Constants.UNIT_TYPES.WORKER), str(Constants.UNIT_TYPES.CART)]):
             if key in self.object_nodes:
-                game_states[idx * 2 + 3] = len(self.object_nodes[key]) / max_count
+                game_states[idx * 2 + 3] = len(self.object_nodes[key]) / MAX_UNIT_COUNT
             if (key + "_opponent") in self.object_nodes:
-                game_states[idx * 2 + 4] = len(self.object_nodes[(key + "_opponent")]) / max_count
+                game_states[idx * 2 + 4] = len(self.object_nodes[(key + "_opponent")]) / MAX_UNIT_COUNT
 
         # 1x research points
-        game_states[9] = game.state["teamStates"][team]["researchPoints"] / 200.0
+        game_states[9] = game.state["teamStates"][team]["researchPoints"] / MAX_RESEARCH
 
         # 1x researched coal
         game_states[10] = float(game.state["teamStates"][team]["researched"]["coal"])
@@ -169,46 +175,45 @@ class LuxAgent(AgentWithModel):
         # 1x researched uranium
         game_states[11] = float(game.state["teamStates"][team]["researched"]["uranium"])
 
-
-
         if unit is not None:
             unit_pos = unit.pos
         else:
             unit_pos = city_tile.pos
 
         """
-        Entity Detection
+        Entity Detection - 42x:
         
-        Nearest Cart
+        Nearest Cart - 3x:
          - 1x angle theta
          - 1x distance
          - 1x amount
          
-         Nearest Worker
+        Nearest Worker - 3x:
          - 1x angle theta
          - 1x distance
          - 1x amount
         
-        Worker with fullest inventory
+        Worker with fullest inventory - 3x:
          - 1x angle theta
          - 1x distance
          - 1x amount
         
-        Nearest City:
+        Nearest City - 3x:
          - 1x angle theta
          - 1x distance
          - 1x amount fuel
         
-        City with least amount of Fuel:
+        City with least amount of Fuel - 3x:
          - 1x angle theta
          - 1x distance
          - 1x amount fuel
-         
+        
+        Resources - 27x:
         - 3x per resource 
-         - 3x for 3 nearest piles different piles
-          - 1x angle theta to nearest wood pile
-          - 1x distance to nearest wood pile
-          - 1x amount in nearest wood pile
+         - 3x for 3 nearest resource piles
+          - 1x angle theta
+          - 1x distance
+          - 1x amount
          
         """
 
@@ -223,20 +228,20 @@ class LuxAgent(AgentWithModel):
 
         entity_detection = []
 
-        for idx, type in enumerate(types.keys()):
-            if type in self.object_nodes:
+        for idx, (entity_type, quantity) in enumerate(types.items()):
+            if entity_type in self.object_nodes:
 
-                nodes = self.object_nodes[type]
+                nodes = self.object_nodes[entity_type]
                 sorted_idx = np.argsort(self.distance(unit_pos, nodes))
 
-                if unit.type == type or type == "city" and city_tile is not None:
+                if unit.type == entity_type or entity_type == "city" and city_tile is not None:
                     sorted_idx = np.delete(sorted_idx, 0)
 
                 if len(nodes) == 0:
                     continue
 
                 n_closest_units = []
-                for i in range(types[type]):
+                for i in range(quantity):
                     other_pos = nodes[sorted_idx[i]]
 
                     # 1x angle theta
@@ -246,7 +251,7 @@ class LuxAgent(AgentWithModel):
                     distance = np.sqrt(other_pos[0] - unit_pos[0] + other_pos[1] - unit_pos[1])
 
                     # 1x amount
-                    cargo_amount = self.get_cargo(game.map.get_cell_by_pos(other_pos), type, city_tile)
+                    cargo_amount = self.get_cargo(game.map.get_cell_by_pos(other_pos), entity_type, city_tile)
 
                     n_closest_units.append(np.array([angle, distance, cargo_amount]))
 
@@ -256,23 +261,49 @@ class LuxAgent(AgentWithModel):
 
         return np.concatenate([turn_identifier, game_states, entity_detection])
 
-    def get_reward(self, game, is_game_finished, is_new_turn, is_game_error):
+    def game_start(self, game):
+        """
+        This function is called at the start of each game. Use this to
+        reset and initialize per game. Note that self.team may have
+        been changed since last game. The game map has been created
+        and starting units placed.
+        Args:
+            game ([type]): Game.
+        """
+
+        # Reset reward tracking
+        self.last_unit_count = 0
+        self.last_city_tile_count = 0
+        self.last_fuel_collected = 0
+
+    def get_reward(self, game, game_over: bool, is_new_turn: bool, game_errored: bool) -> float:
         """
         Returns the reward function for this step of the game. Reward should be a
         delta increment to the reward, not the total current reward.
+
+        :param game: Game object for observations
+        :param game_over:
+        :param is_new_turn:
+        :param game_errored:
+        :return: reward for this time step
         """
 
-        if is_game_error:
-            # Game environment step failed, assign a game lost reward to not incentivise this
+        """
+        Before Game
+            [-] Game error
+            [] Game not start or end
+        """
+
+        if not is_new_turn and not game_over:
+            # Only apply rewards at the start of each turn or at game end
+            return 0.0
+
+        if game_errored:
+            # Game environment step failed, assign a game lost reward to not incentivise this behaviour
             print("Game failed due to error")
             return -1.0
 
-        if not is_new_turn and not is_game_finished:
-            # Only apply rewards at the start of each turn or at game end
-            return 0
-
         """
-        
         During Game
             [+++] city spawned
             [---] city destroyed
@@ -280,21 +311,74 @@ class LuxAgent(AgentWithModel):
             [++] unit spawned
             [--] unit destroyed
             
-            [+] fuel collected 
-        
+            [+] fuel collected
+        """
+
+        # Number of cities spawned or destroyed
+        city_count = 0
+        city_count_opponent = 0
+        city_tile_count = 0
+        city_tile_count_opponent = 0
+        for city in game.cities.values():
+            if city.team == self.team:
+                city_count += 1
+            else:
+                city_count_opponent += 1
+
+            for cell in city.city_cells:
+                if city.team == self.team:
+                    city_tile_count += 1
+                else:
+                    city_tile_count_opponent += 1
+
+        city_growth = city_tile_count - self.last_city_tile_count
+        self.last_city_tile_count = city_tile_count
+
+        # Number of units spawned or destroyed
+        unit_count = len(game.state["teamStates"][self.team]["units"])
+        unit_count_opponent = len(game.state["teamStates"][(self.team + 1) % 2]["units"])
+        unit_growth = unit_count - self.last_unit_count
+        self.last_unit_count = unit_count
+
+        # Amount of fuel collected
+        fuel_collected = game.stats["teamStats"][self.team]["fuelGenerated"]
+        fuel_growth = fuel_collected - self.last_fuel_collected
+        self.last_fuel_collected = fuel_collected
+
+        """
         End of game
-            # ally cities - # enemy cities standing
+            [] # ally cities - # enemy cities standing
             
             if above == 0
                 # ally units - # enemy units
         
         """
 
+        lead_amount = 0
+        if game_over:
+            self.is_last_turn = True
 
+            lead_amount = city_tile_count - city_count_opponent
 
+            if lead_amount == 0:
+                lead_amount = unit_count - unit_count_opponent
 
+            '''
+            # game win/loss reward
+            if game.get_winning_team() == self.team:
+                # Win
+            else:
+                # Loss
+            '''
 
-        return 0
+        reward = 0.0
+
+        reward += city_growth * CITY_REWARD_MODIFIER
+        reward += unit_growth * UNIT_REWARD_MODIFIER
+        reward += fuel_growth * FUEL_REWARD_MODIFIER
+        reward += lead_amount * LEAD_REWARD_MODIFIER
+
+        return reward
 
     def take_action(self, action_code, game, unit=None, city_tile=None, team=None):
         """
