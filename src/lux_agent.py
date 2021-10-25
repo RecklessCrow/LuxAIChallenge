@@ -22,6 +22,7 @@ class LuxAgent(AgentWithModel):
             partial(MoveAction, direction=Constants.DIRECTIONS.SOUTH),
             partial(MoveAction, direction=Constants.DIRECTIONS.EAST),
 
+            # ToDo: fix
             # Transfer to nearby cart
             # partial(TransferAction, target_type_restriction=Constants.UNIT_TYPES.CART),
             # Transfer to nearby worker
