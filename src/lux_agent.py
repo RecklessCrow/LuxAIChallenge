@@ -1,5 +1,6 @@
 import numpy as np
 from gym import spaces
+from luxai2021.game.game import Game
 
 from constants import *
 from luxai2021.env.agent import AgentWithModel
@@ -95,8 +96,6 @@ class LuxAgent(AgentWithModel):
 
     @staticmethod
     def get_cargo(game, cell, unit_type):
-
-        # cargo_amount = self.get_cargo(game.map.get_cell_by_pos(other_pos), entity_type, city_tile)
         RESOURCE_LIST = [Constants.RESOURCE_TYPES.WOOD, Constants.RESOURCE_TYPES.COAL, Constants.RESOURCE_TYPES.URANIUM]
 
         if unit_type == "city":
@@ -111,7 +110,7 @@ class LuxAgent(AgentWithModel):
             # Unit cargo
             return min(next(iter(cell.units.values())).get_cargo_space_left() / 100, 1.0)
 
-    def get_observation(self, game, unit, city_tile, team, is_new_turn: bool):
+    def get_observation(self, game: Game, unit, city_tile, team, is_new_turn: bool):
         """
         Implements getting a observation from the current game for this unit or city
         """
@@ -139,9 +138,10 @@ class LuxAgent(AgentWithModel):
         """
         Game State - 12x:
          - 1x cargo size
+         - 1x percent of day state complete
          - 1x is night
-         - 1x percent of game done
-         - 2x citytile counts [cur player, opponent]
+         - 1x percent of day/night cycle complete
+         - 2x city tile counts [cur player, opponent]
          - 2x worker counts [cur player, opponent]
          - 2x cart counts [cur player, opponent]
          
@@ -151,32 +151,41 @@ class LuxAgent(AgentWithModel):
         """
 
         game_states = np.zeros(NUM_GAME_STATES)
+        game_state_idx = 0
 
         # 1x cargo size
         if unit is not None:
-            game_states[0] = unit.get_cargo_space_left() / GAME_CONSTANTS["PARAMETERS"]["RESOURCE_CAPACITY"]["WORKER"]
+            game_states[game_state_idx] = unit.get_cargo_space_left() / GAME_CONSTANTS["PARAMETERS"]["RESOURCE_CAPACITY"]["WORKER"]
+        game_state_idx += 1
+
+        # 1x percent of day/night cycle complete
+        game_states[game_state_idx] = (game.state['turn'] % NUM_STEPS_IN_DAY) / NUM_STEPS_IN_DAY
+        game_state_idx += 1
 
         # 1x is night
-        game_states[1] = game.is_night()
+        game_states[game_state_idx] = game.is_night()
+        game_state_idx += 1
 
         # 1x percent of game done
-        game_states[2] = game.state["turn"] / GAME_CONSTANTS["PARAMETERS"]["MAX_DAYS"]
+        game_states[game_state_idx] = game.state["turn"] / GAME_CONSTANTS["PARAMETERS"]["MAX_DAYS"]
+        game_state_idx += 1
 
         # 6x unit counts
-        for idx, key in enumerate(["city", str(Constants.UNIT_TYPES.WORKER), str(Constants.UNIT_TYPES.CART)]):
+        for key in ["city", str(Constants.UNIT_TYPES.WORKER), str(Constants.UNIT_TYPES.CART)]:
             if key in self.object_nodes:
-                game_states[idx * 2 + 3] = len(self.object_nodes[key]) / MAX_UNIT_COUNT
+                game_states[game_state_idx] = len(self.object_nodes[key]) / MAX_UNIT_COUNT
             if (key + "_opponent") in self.object_nodes:
-                game_states[idx * 2 + 4] = len(self.object_nodes[(key + "_opponent")]) / MAX_UNIT_COUNT
+                game_states[game_state_idx] = len(self.object_nodes[(key + "_opponent")]) / MAX_UNIT_COUNT
+            game_state_idx += 1
 
         # 1x research points
-        game_states[9] = game.state["teamStates"][team]["researchPoints"] / MAX_RESEARCH
+        game_states[game_state_idx] = game.state["teamStates"][team]["researchPoints"] / MAX_RESEARCH
 
         # 1x researched coal
-        game_states[10] = float(game.state["teamStates"][team]["researched"]["coal"])
+        game_states[game_state_idx] = float(game.state["teamStates"][team]["researched"]["coal"])
 
         # 1x researched uranium
-        game_states[11] = float(game.state["teamStates"][team]["researched"]["uranium"])
+        game_states[game_state_idx] = float(game.state["teamStates"][team]["researched"]["uranium"])
 
         if unit is not None:
             unit_pos = unit.pos
@@ -186,28 +195,28 @@ class LuxAgent(AgentWithModel):
         """
         Entity Detection - 42x:
         
-        Nearest Cart - 3x:
-         - 1x angle theta
+        Nearest Cart - 4x:
+         - 2x [vector direction]
          - 1x distance
          - 1x amount
          
-        Nearest Worker - 3x:
-         - 1x angle theta
+        Nearest Worker - 4x:
+         - 2x [vector direction]
          - 1x distance
          - 1x amount
         
-        Worker with fullest inventory - 3x:
-         - 1x angle theta
+        Worker with fullest inventory - 4x:
+         - 2x [vector direction]
          - 1x distance
          - 1x amount
         
-        Nearest City - 3x:
-         - 1x angle theta
+        Nearest City - 4x:
+         - 2x [vector direction]
          - 1x distance
          - 1x amount fuel
         
-        City with least amount of Fuel - 3x:
-         - 1x angle theta
+        City with least amount of Fuel - 4x:
+         - 2x [vector direction]
          - 1x distance
          - 1x amount fuel
         
@@ -231,18 +240,19 @@ class LuxAgent(AgentWithModel):
 
         entity_detection = []
 
-        for type in types.keys():
-            if type not in self.object_nodes:
+        # Nearest Entity
+        for entity_type in types.keys():
+            if entity_type not in self.object_nodes:
                 sorted_idx = np.array([])
             else:
-                nodes = self.object_nodes[type]
+                nodes = self.object_nodes[entity_type]
                 sorted_idx = np.argsort(self.distance(np.array([unit_pos.x, unit_pos.y]), nodes))
 
-                if unit is not None and unit.type == type or type == "city" and city_tile is not None:
+                if unit is not None and unit.type == entity_type or entity_type == "city" and city_tile is not None:
                     sorted_idx = np.delete(sorted_idx, 0)
 
             n_closest_units = []
-            for i in range(types[type]):
+            for i in range(types[entity_type]):
                 if i >= sorted_idx.size:
                     n_closest_units.append(np.array([0, 0, 0, 0]))
                     continue
@@ -251,18 +261,18 @@ class LuxAgent(AgentWithModel):
 
                 # 2x [vector direction]
                 # angle = np.arctan2(other_pos[1] - unit_pos.y, other_pos[0] - unit_pos.x)
-                if other_pos[0] - unit_pos.x == 0:
+                if other_pos[0] - unit_pos.x == 0:  # center
                     x_diff = .5
-                elif other_pos[0] - unit_pos.x > 0:
+                elif other_pos[0] - unit_pos.x > 0:  # up
                     x_diff = 1
-                else:
+                else:  # down
                     x_diff = 0
 
-                if other_pos[1] - unit_pos.y == 0:
+                if other_pos[1] - unit_pos.y == 0:  # center
                     y_diff = .5
-                elif other_pos[1] - unit_pos.y > 0:
+                elif other_pos[1] - unit_pos.y > 0:  # up
                     y_diff = 1
-                else:
+                else:  # down
                     y_diff = 0
 
                 # 1x distance
@@ -270,11 +280,19 @@ class LuxAgent(AgentWithModel):
 
                 # 1x amount
                 other_cell = game.map.get_cell_by_pos(Position(other_pos[0], other_pos[1]))
-                cargo_amount = self.get_cargo(game, other_cell, type)
+                cargo_amount = self.get_cargo(game, other_cell, entity_type)
 
                 n_closest_units.append(np.array([x_diff, y_diff, distance, cargo_amount]))
 
             entity_detection.append(np.concatenate(n_closest_units))
+
+        # Worker with fullest inventory
+        worker_inventory = np.zeros(4)
+        entity_detection.append(worker_inventory)
+
+        # City with least amount of fuel
+        dying_city = np.zeros(4)
+        entity_detection.append(dying_city)
 
         entity_detection = np.concatenate(entity_detection)
 
@@ -309,11 +327,11 @@ class LuxAgent(AgentWithModel):
 
         """
         During Game
-            [+++] city spawned
-            [---] city destroyed
+            [+] city spawned
+            [-] city destroyed
             
-            [++] unit spawned
-            [--] unit destroyed
+            [+] unit spawned
+            [-] unit destroyed
             
             [+] fuel collected
         """
@@ -377,11 +395,12 @@ class LuxAgent(AgentWithModel):
 
         reward = 0.0
 
+        # bigger negative reward than positive
         if city_growth < 0:
-            reward += city_growth * CITY_REWARD_MODIFIER
+            city_growth *= 2
 
         if unit_growth < 0:
-            reward += unit_growth * UNIT_REWARD_MODIFIER
+            unit_growth *= 2
 
         reward += city_growth * CITY_REWARD_MODIFIER
         reward += unit_growth * UNIT_REWARD_MODIFIER
