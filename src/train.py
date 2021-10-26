@@ -87,7 +87,7 @@ def train():
 
     print("Training Model...")
     model.learn(
-        total_timesteps=MAX_STEPS,
+        total_timesteps=TRAINING_STEPS,
         callback=callbacks
     )
 

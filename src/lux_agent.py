@@ -167,8 +167,6 @@ class LuxAgent(AgentWithModel):
                     self.object_nodes[key] = []
                 self.object_nodes[key].append(cell.city_tile)
 
-
-
         # for key in self.object_nodes:
         #     self.object_nodes[key] = np.array(self.object_nodes[key])
 
@@ -256,7 +254,7 @@ class LuxAgent(AgentWithModel):
         # 1x cargo size
         if unit is not None:
             self.observation[observation_idx] = unit.get_cargo_space_left() / \
-                                          GAME_CONSTANTS["PARAMETERS"]["RESOURCE_CAPACITY"]["WORKER"]
+                                                GAME_CONSTANTS["PARAMETERS"]["RESOURCE_CAPACITY"]["WORKER"]
         observation_idx += 1
 
         # 1x percent of day/night cycle complete
@@ -297,7 +295,6 @@ class LuxAgent(AgentWithModel):
         # 1x researched uranium
         self.observation[observation_idx] = float(game.state["teamStates"][team]["researched"]["uranium"])
         observation_idx += 1
-
 
         """
         Entity Detection - 42x:
@@ -359,7 +356,7 @@ class LuxAgent(AgentWithModel):
         for entity_type in types.keys():
 
             if entity_type not in self.object_nodes:  # if there is none of this entity_type on board
-                observation_idx += 7 * types[entity_type]
+                observation_idx += UNIT_VECTOR_SIZE * types[entity_type]
                 continue
 
             other_units = self.object_nodes[entity_type]
@@ -385,7 +382,7 @@ class LuxAgent(AgentWithModel):
 
             for n in range(types[entity_type]):  # n-nearest
                 if n >= sorted_idx.size:  # n-nearest does not exist
-                    observation_idx += 7
+                    observation_idx += UNIT_VECTOR_SIZE
                     continue
 
                 other_position = other_unit_positions[sorted_idx[n]]
@@ -393,13 +390,12 @@ class LuxAgent(AgentWithModel):
 
                 distance = distances[sorted_idx[n]]
                 distance /= game.map.width + game.map.height
-                self.observation[observation_idx + 5] = distance
+                self.observation[observation_idx + (UNIT_VECTOR_SIZE - 2)] = distance
 
                 # 1x amount
                 cargo_amount = self.get_cargo(game, other_units[sorted_idx[n]], entity_type)
-                self.observation[observation_idx + 6] = cargo_amount
-                observation_idx += 7
-
+                self.observation[observation_idx + (UNIT_VECTOR_SIZE - 1)] = cargo_amount
+                observation_idx += UNIT_VECTOR_SIZE
 
         # ToDo Worker with fullest inventory (remove self)
         units = game.get_teams_units(self.team).values()
@@ -413,28 +409,29 @@ class LuxAgent(AgentWithModel):
 
                 distance = abs(other_pos[0] - current_position[0]) + abs(other_pos[1] - current_position[1])
                 distance /= game.map.width + game.map.height
-                self.observation[observation_idx + 5] = distance
+                self.observation[observation_idx + (UNIT_VECTOR_SIZE - 2)] = distance
 
                 # 1x amount
                 cargo_amount = self.get_cargo(game, max_unit, max_unit.type)
-                self.observation[observation_idx + 6] = cargo_amount
+                self.observation[observation_idx + (UNIT_VECTOR_SIZE - 1)] = cargo_amount
 
-        observation_idx += 7
+        observation_idx += UNIT_VECTOR_SIZE
 
         if "city" in self.object_nodes:
             starving_city_tile = min(self.object_nodes["city"], key=lambda x: self.get_cargo(game, x, "city"))
             starving_city_tile_position = [starving_city_tile.pos.x, starving_city_tile.pos.y]
 
-            distance = abs(starving_city_tile_position[0] - current_position[0]) + abs(starving_city_tile_position[1] - current_position[1])
+            distance = abs(starving_city_tile_position[0] - current_position[0]) + abs(
+                starving_city_tile_position[1] - current_position[1])
             distance /= game.map.width + game.map.height
-            self.observation[observation_idx + 5] = distance
+            self.observation[observation_idx + (UNIT_VECTOR_SIZE - 2)] = distance
 
             self.add_vector(self.observation, observation_idx, current_position, starving_city_tile_position)
             cargo_amount = self.get_cargo(game, starving_city_tile, "city")
-            self.observation[observation_idx + 6] = cargo_amount
+            self.observation[observation_idx + (UNIT_VECTOR_SIZE - 1)] = cargo_amount
 
-        observation_idx += 7
-        assert observation_idx == NUM_IDENTIFIERS + NUM_GAME_STATES + NUM_RESOURCES
+        observation_idx += UNIT_VECTOR_SIZE
+        assert observation_idx == OBSERVATION_SHAPE[0]
 
         return self.observation
 
