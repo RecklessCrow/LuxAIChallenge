@@ -181,6 +181,27 @@ class LuxAgent(AgentWithModel):
             # Unit cargo
             return min(next(iter(cell.units.values())).get_cargo_space_left() / 100, 1.0)
 
+    @staticmethod
+    def create_3Vector(unit_pos, other_pos):
+        if other_pos[0] - unit_pos.x == 0:  # center
+            x_diff = .5
+        elif other_pos[0] - unit_pos.x > 0:  # up
+            x_diff = 1
+        else:  # down
+            x_diff = 0
+
+        if other_pos[1] - unit_pos.y == 0:  # center
+            y_diff = .5
+        elif other_pos[1] - unit_pos.y > 0:  # up
+            y_diff = 1
+        else:  # down
+            y_diff = 0
+
+        # 1x distance
+        distance = np.sqrt((other_pos[0] - unit_pos.x) ** 2 + (other_pos[1] - unit_pos.y) ** 2)
+
+        return [x_diff, y_diff, distance]
+
     def get_observation(self, game: Game, unit, city_tile, team, is_new_turn: bool):
         """
         Implements getting a observation from the current game for this unit or city
@@ -329,6 +350,9 @@ class LuxAgent(AgentWithModel):
                 if unit is not None and unit.type == entity_type or entity_type == "city" and city_tile is not None:
                     sorted_idx = np.delete(sorted_idx, 0)
 
+            # todo check unit's team
+            # sorted_idx = np.array([node for node in sorted_idx if node.team])
+
             n_closest_units = []
             for i in range(types[entity_type]):
                 if i >= sorted_idx.size:
@@ -337,69 +361,53 @@ class LuxAgent(AgentWithModel):
 
                 other_pos = nodes[sorted_idx[i]]
 
-                # 2x [vector direction]
-                # angle = np.arctan2(other_pos[1] - unit_pos.y, other_pos[0] - unit_pos.x)
-                if other_pos[0] - unit_pos.x == 0:  # center
-                    x_diff = .5
-                elif other_pos[0] - unit_pos.x > 0:  # up
-                    x_diff = 1
-                else:  # down
-                    x_diff = 0
-
-                if other_pos[1] - unit_pos.y == 0:  # center
-                    y_diff = .5
-                elif other_pos[1] - unit_pos.y > 0:  # up
-                    y_diff = 1
-                else:  # down
-                    y_diff = 0
-
-                # 1x distance
-                distance = np.sqrt((other_pos[0] - unit_pos.x) ** 2 + (other_pos[1] - unit_pos.y) ** 2)
+                vector = self.create_3Vector(unit_pos, other_pos)
 
                 # 1x amount
                 other_cell = game.map.get_cell_by_pos(Position(other_pos[0], other_pos[1]))
                 cargo_amount = self.get_cargo(game, other_cell, entity_type)
 
-                n_closest_units.append(np.array([x_diff, y_diff, distance, cargo_amount]))
+                vector.append(cargo_amount)
+
+                n_closest_units.append(np.array(vector))
 
             entity_detection.append(np.concatenate(n_closest_units))
 
-        # ToDo Worker with fullest inventory
+        # ToDo Worker with fullest inventory (remove self)
         worker_inventory = np.zeros(4)
         units = game.get_teams_units(self.team)
 
         if units:
             def get_unit_cargo(unit):
-                return max(game.get_unit(self.team, unit).cargo.values())
+                return sum(game.get_unit(self.team, unit).cargo.values())
 
             max_unit_id = max(units, key=get_unit_cargo)
             max_unit = game.get_unit(self.team, max_unit_id)
+            other_pos = [max_unit.pos.x, max_unit.pos.y]
 
-            x_diff = max_unit.pos.x - unit_pos.x
-            if x_diff == 0:  # center
-                x_direction = .5
-            elif x_diff > 0:  # up
-                x_direction = 1
-            else:  # down
-                x_direction = 0
+            worker_inventory = self.create_3Vector(unit_pos, other_pos)
 
-            y_diff = max_unit.pos.y - unit_pos.y
-            if y_diff == 0:  # center
-                y_direction = .5
-            elif y_diff > 0:  # up
-                y_direction = 1
-            else:  # down
-                y_direction = 0
+            # 1x amount
+            cargo_amount = get_unit_cargo(max_unit_id)
 
-            worker_inventory[0] = x_direction
-            worker_inventory[1] = y_direction
-            worker_inventory[2] = np.sqrt((max_unit.pos.x - unit_pos.x) ** 2 + (max_unit.pos.y - unit_pos.y) ** 2)
-            worker_inventory[3] = get_unit_cargo(max_unit_id)
+            worker_inventory.append(cargo_amount)
+            worker_inventory = np.array(worker_inventory)
 
         entity_detection.append(worker_inventory)
 
         # ToDo City with least amount of fuel
         dying_city = np.zeros(4)
+
+        if "city" in self.object_nodes:
+            def get_city_cargo(city_pos):
+                cell = game.map.get_cell_by_pos(Position(city_pos[0], city_pos[1]))
+                return self.get_cargo(game, cell, "city")
+
+            starving_city_position = min(self.object_nodes["city"], key=get_city_cargo)
+            dying_city = self.create_3Vector(unit_pos, starving_city_position)
+            dying_city.append(get_city_cargo(starving_city_position))
+            dying_city = np.array(dying_city)
+
         entity_detection.append(dying_city)
 
         entity_detection = np.concatenate(entity_detection)
@@ -505,10 +513,7 @@ class LuxAgent(AgentWithModel):
 
         # bigger negative reward than positive
         if city_growth < 0:
-            city_growth *= 2
-
-        if unit_growth < 0:
-            unit_growth *= 2
+            city_growth *= 1.5
 
         reward += city_growth * CITY_REWARD_MODIFIER
         reward += unit_growth * UNIT_REWARD_MODIFIER
