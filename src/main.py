@@ -1,3 +1,5 @@
+import torch
+
 from train import train, evaluate
 from multiprocessing import freeze_support
 
@@ -8,5 +10,6 @@ def main():
 
 
 if __name__ == '__main__':
+    device = torch.device("cpu")
     freeze_support()
     main()

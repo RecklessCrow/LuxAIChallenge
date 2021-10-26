@@ -117,6 +117,7 @@ class LuxAgent(AgentWithModel):
         self.observation_space = spaces.Box(low=0, high=1, shape=self.observation_shape, dtype=np.float16)
 
         self.object_nodes = {}
+        self.observation = np.zeros(OBSERVATION_SHAPE[0])
 
     def game_start(self, game):
         self.last_unit_count = 0
@@ -130,10 +131,8 @@ class LuxAgent(AgentWithModel):
         # Add resources
         for cell in game.map.resources:
             if cell.resource.type not in self.object_nodes:
-                self.object_nodes[cell.resource.type] = np.array([[cell.pos.x, cell.pos.y]])
-            else:
-                self.object_nodes[cell.resource.type] = np.concatenate(
-                    (self.object_nodes[cell.resource.type], [[cell.pos.x, cell.pos.y]]), axis=0)
+                self.object_nodes[cell.resource.type] = []
+            self.object_nodes[cell.resource.type].append([cell.pos.x, cell.pos.y])
 
         # Add your own and opponent units
         for t in [team, (team + 1) % 2]:
@@ -143,10 +142,8 @@ class LuxAgent(AgentWithModel):
                     key = str(u.type) + "_opponent"
 
                 if key not in self.object_nodes:
-                    self.object_nodes[key] = np.array([[u.pos.x, u.pos.y]])
-                else:
-                    self.object_nodes[key] = np.concatenate(
-                        (self.object_nodes[key], [[u.pos.x, u.pos.y]]), axis=0)
+                    self.object_nodes[key] = []
+                self.object_nodes[key].append([u.pos.x, u.pos.y])
 
         # Add your own and opponent cities
         for city in game.cities.values():
@@ -156,10 +153,11 @@ class LuxAgent(AgentWithModel):
                     key = "city_opponent"
 
                 if key not in self.object_nodes:
-                    self.object_nodes[key] = np.array([[cells.pos.x, cells.pos.y]])
-                else:
-                    self.object_nodes[key] = np.concatenate(
-                        (self.object_nodes[key], [[cells.pos.x, cells.pos.y]]), axis=0)
+                    self.object_nodes[key] = []
+                self.object_nodes[key].append([cells.pos.x, cells.pos.y])
+
+        for key in self.object_nodes:
+            self.object_nodes[key] = np.array(self.object_nodes[key])
 
     @staticmethod
     def distance(node, nodes):
@@ -182,7 +180,7 @@ class LuxAgent(AgentWithModel):
             return min(next(iter(cell.units.values())).get_cargo_space_left() / 100, 1.0)
 
     @staticmethod
-    def create_3Vector(unit_pos, other_pos):
+    def create_3Vector(observation, observation_idx, unit_pos, other_pos):
         if other_pos[0] - unit_pos.x == 0:  # center
             x_diff = .5
         elif other_pos[0] - unit_pos.x > 0:  # up
@@ -200,7 +198,10 @@ class LuxAgent(AgentWithModel):
         # 1x distance
         distance = np.sqrt((other_pos[0] - unit_pos.x) ** 2 + (other_pos[1] - unit_pos.y) ** 2)
 
-        return [x_diff, y_diff, distance]
+        observation[observation_idx + 0] = x_diff
+        observation[observation_idx + 1] = y_diff
+        observation[observation_idx + 2] = distance
+        observation_idx += 3
 
     def get_observation(self, game: Game, unit, city_tile, team, is_new_turn: bool):
         """
@@ -210,6 +211,9 @@ class LuxAgent(AgentWithModel):
         if is_new_turn:
             self.get_map_contents(game, team)
 
+        self.observation.fill(0)
+        observation_idx = 0
+
         """
         Features/Objects in Vector
         
@@ -218,14 +222,15 @@ class LuxAgent(AgentWithModel):
          - 1x Cart
          - 1x City
          """
-        turn_identifier = np.zeros(NUM_IDENTIFIERS)
         if unit is not None:
             if unit.type == Constants.UNIT_TYPES.WORKER:
-                turn_identifier[0] = 1.0  # Worker
+                self.observation[observation_idx + 0] = 1.0  # Worker
             else:
-                turn_identifier[1] = 1.0  # Cart
+                self.observation[observation_idx + 1] = 1.0  # Cart
         if city_tile is not None:
-            turn_identifier[2] = 1.0  # CityTile
+            self.observation[observation_idx + 2] = 1.0  # CityTile
+
+        observation_idx += 3
 
         """
         Game State - 12x:
@@ -242,46 +247,46 @@ class LuxAgent(AgentWithModel):
          - 1x researched uranium [cur player]
         """
 
-        game_states = np.zeros(NUM_GAME_STATES)
-        game_state_idx = 0
-
         # 1x cargo size
         if unit is not None:
-            game_states[game_state_idx] = unit.get_cargo_space_left() / \
+            self.observation[observation_idx] = unit.get_cargo_space_left() / \
                                           GAME_CONSTANTS["PARAMETERS"]["RESOURCE_CAPACITY"]["WORKER"]
-        game_state_idx += 1
+        observation_idx += 1
 
         # 1x percent of day/night cycle complete
         if game.is_night():
-            game_states[game_state_idx] = (game.state['turn'] % NUM_STEPS_IN_NIGHT) / NUM_STEPS_IN_NIGHT
+            self.observation[observation_idx] = (game.state['turn'] % NUM_STEPS_IN_NIGHT) / NUM_STEPS_IN_NIGHT
         else:
-            game_states[game_state_idx] = (game.state['turn'] % NUM_STEPS_IN_DAY) / NUM_STEPS_IN_DAY
-        game_state_idx += 1
+            self.observation[observation_idx] = (game.state['turn'] % NUM_STEPS_IN_DAY) / NUM_STEPS_IN_DAY
+        observation_idx += 1
 
         # 1x is night
-        game_states[game_state_idx] = game.is_night()
-        game_state_idx += 1
+        self.observation[observation_idx] = game.is_night()
+        observation_idx += 1
 
         # 1x percent of game done
-        game_states[game_state_idx] = game.state["turn"] / GAME_CONSTANTS["PARAMETERS"]["MAX_DAYS"]
-        game_state_idx += 1
+        self.observation[observation_idx] = game.state["turn"] / GAME_CONSTANTS["PARAMETERS"]["MAX_DAYS"]
+        observation_idx += 1
 
         # 6x unit counts
         for key in ["city", str(Constants.UNIT_TYPES.WORKER), str(Constants.UNIT_TYPES.CART)]:
             if key in self.object_nodes:
-                game_states[game_state_idx] = len(self.object_nodes[key]) / MAX_UNIT_COUNT
+                self.observation[observation_idx] = len(self.object_nodes[key]) / MAX_UNIT_COUNT
             if (key + "_opponent") in self.object_nodes:
-                game_states[game_state_idx] = len(self.object_nodes[(key + "_opponent")]) / MAX_UNIT_COUNT
-            game_state_idx += 1
+                self.observation[observation_idx + 1] = len(self.object_nodes[(key + "_opponent")]) / MAX_UNIT_COUNT
+            observation_idx += 2
 
         # 1x research points
-        game_states[game_state_idx] = game.state["teamStates"][team]["researchPoints"] / MAX_RESEARCH
+        self.observation[observation_idx] = game.state["teamStates"][team]["researchPoints"] / MAX_RESEARCH
+        observation_idx += 1
 
         # 1x researched coal
-        game_states[game_state_idx] = float(game.state["teamStates"][team]["researched"]["coal"])
+        self.observation[observation_idx] = float(game.state["teamStates"][team]["researched"]["coal"])
+        observation_idx += 1
 
         # 1x researched uranium
-        game_states[game_state_idx] = float(game.state["teamStates"][team]["researched"]["uranium"])
+        self.observation[observation_idx] = float(game.state["teamStates"][team]["researched"]["uranium"])
+        observation_idx += 1
 
         if unit is not None:
             unit_pos = unit.pos
@@ -325,6 +330,8 @@ class LuxAgent(AgentWithModel):
          
         """
 
+        assert observation_idx == 3 + 13
+
         # ToDo Check unit for team
         # game.get_teams_units(self.team) ?
 
@@ -336,8 +343,6 @@ class LuxAgent(AgentWithModel):
             str(Constants.UNIT_TYPES.WORKER): 1,
             str(Constants.UNIT_TYPES.CART): 1
         }
-
-        entity_detection = []
 
         # Nearest Entity
         for entity_type in types.keys():
@@ -361,20 +366,15 @@ class LuxAgent(AgentWithModel):
 
                 other_pos = nodes[sorted_idx[i]]
 
-                vector = self.create_3Vector(unit_pos, other_pos)
+                self.create_3Vector(self.observation, observation_idx, unit_pos, other_pos)
 
                 # 1x amount
                 other_cell = game.map.get_cell_by_pos(Position(other_pos[0], other_pos[1]))
                 cargo_amount = self.get_cargo(game, other_cell, entity_type)
-
-                vector.append(cargo_amount)
-
-                n_closest_units.append(np.array(vector))
-
-            entity_detection.append(np.concatenate(n_closest_units))
+                self.observation[observation_idx] = cargo_amount
+                observation_idx += 1
 
         # ToDo Worker with fullest inventory (remove self)
-        worker_inventory = np.zeros(4)
         units = game.get_teams_units(self.team)
 
         if units:
@@ -385,34 +385,26 @@ class LuxAgent(AgentWithModel):
             max_unit = game.get_unit(self.team, max_unit_id)
             other_pos = [max_unit.pos.x, max_unit.pos.y]
 
-            worker_inventory = self.create_3Vector(unit_pos, other_pos)
+            self.create_3Vector(self.observation, observation_idx, unit_pos, other_pos)
 
             # 1x amount
             cargo_amount = get_unit_cargo(max_unit_id)
-
-            worker_inventory.append(cargo_amount)
-            worker_inventory = np.array(worker_inventory)
-
-        entity_detection.append(worker_inventory)
+            self.observation[observation_idx] = cargo_amount
+            observation_idx += 1
 
         # ToDo City with least amount of fuel
-        dying_city = np.zeros(4)
-
         if "city" in self.object_nodes:
             def get_city_cargo(city_pos):
                 cell = game.map.get_cell_by_pos(Position(city_pos[0], city_pos[1]))
                 return self.get_cargo(game, cell, "city")
 
             starving_city_position = min(self.object_nodes["city"], key=get_city_cargo)
-            dying_city = self.create_3Vector(unit_pos, starving_city_position)
-            dying_city.append(get_city_cargo(starving_city_position))
-            dying_city = np.array(dying_city)
+            self.create_3Vector(self.observation, observation_idx, unit_pos, starving_city_position)
+            cargo_amount = get_city_cargo(starving_city_position)
+            self.observation[observation_idx] = cargo_amount
+            observation_idx += 1
 
-        entity_detection.append(dying_city)
-
-        entity_detection = np.concatenate(entity_detection)
-
-        return np.concatenate([turn_identifier, game_states, entity_detection])
+        return self.observation
 
     def get_reward(self, game, game_over: bool, is_new_turn: bool, game_errored: bool) -> float:
         """
