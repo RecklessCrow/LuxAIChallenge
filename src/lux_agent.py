@@ -161,8 +161,12 @@ class LuxAgent(AgentWithModel):
         #     self.object_nodes[key] = np.array(self.object_nodes[key])
 
     @staticmethod
-    def distance(node, nodes):
-        return np.sum((nodes - node), axis=1)
+    def distance(unit_pos, others_pos):
+        distances = []
+        for i in range(len(others_pos)):
+            distances.append(abs(others_pos[i][0] - unit_pos[0]) + abs(others_pos[i][1] - unit_pos[1]))
+
+        return distances
 
     @staticmethod
     def get_cargo(game, unit, unit_type):
@@ -176,9 +180,6 @@ class LuxAgent(AgentWithModel):
 
     @staticmethod
     def add_vector(observation, observation_idx, unit_pos, other_pos):
-
-        # 1x distance
-        distance = abs(other_pos[0] - unit_pos[0]) + abs(other_pos[1] - unit_pos[1])
 
         x_diff = other_pos[0] - unit_pos[0]
         if x_diff == 0:  # center
@@ -198,7 +199,6 @@ class LuxAgent(AgentWithModel):
 
         observation[observation_idx + 0] = x_diff
         observation[observation_idx + 1] = y_diff
-        observation[observation_idx + 2] = distance / 100
 
     def get_observation(self, game: Game, unit, city_tile, team, is_new_turn: bool):
         """
@@ -358,10 +358,11 @@ class LuxAgent(AgentWithModel):
                 other_units = [city_tile for city_tile in other_units if city_tile.team == team]
 
             # get positions
-            other_unit_positions = np.array([[unit.pos.x, unit.pos.y] for unit in other_units])
+            other_unit_positions = [[unit.pos.x, unit.pos.y] for unit in other_units]
 
             # sort by least distance
-            sorted_idx = np.argsort(self.distance(current_position, other_unit_positions))
+            distances = self.distance(current_position, other_unit_positions)
+            sorted_idx = np.argsort(distances)
 
             # remove self
             if unit is not None and unit.type == entity_type:
@@ -376,6 +377,9 @@ class LuxAgent(AgentWithModel):
 
                 other_position = other_unit_positions[sorted_idx[n]]
                 self.add_vector(self.observation, observation_idx, current_position, other_position)
+
+                distance = distances[sorted_idx[n]]
+                self.observation[observation_idx + 2] = distance
 
                 # 1x amount
                 cargo_amount = self.get_cargo(game, other_units[sorted_idx[n]], entity_type)
@@ -393,6 +397,9 @@ class LuxAgent(AgentWithModel):
                 other_pos = [max_unit.pos.x, max_unit.pos.y]
                 self.add_vector(self.observation, observation_idx, current_position, other_pos)
 
+                distance = abs(other_pos[0] - current_position[0]) + abs(other_pos[1] - current_position[1])
+                self.observation[observation_idx + 2] = distance
+
                 # 1x amount
                 cargo_amount = self.get_cargo(game, max_unit, max_unit.type)
                 self.observation[observation_idx + 3] = cargo_amount
@@ -402,6 +409,10 @@ class LuxAgent(AgentWithModel):
         if "city" in self.object_nodes:
             starving_city_tile = min(self.object_nodes["city"], key=lambda x: self.get_cargo(game, x, "city"))
             starving_city_tile_position = [starving_city_tile.pos.x, starving_city_tile.pos.y]
+
+            distance = abs(starving_city_tile_position[0] - current_position[0]) + abs(starving_city_tile_position[1] - current_position[1])
+            self.observation[observation_idx + 2] = distance
+
             self.add_vector(self.observation, observation_idx, current_position, starving_city_tile_position)
             cargo_amount = self.get_cargo(game, starving_city_tile, "city")
             self.observation[observation_idx + 3] = cargo_amount
