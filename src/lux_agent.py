@@ -1,14 +1,13 @@
+from functools import partial
+
 import numpy as np
 from gym import spaces
-from luxai2021.game.game import Game
 
 from constants import *
 from luxai2021.env.agent import AgentWithModel
 from luxai2021.game.actions import *
-from functools import partial
-
+from luxai2021.game.game import Game
 from luxai2021.game.game_constants import GAME_CONSTANTS
-from luxai2021.game.position import Position
 
 
 def smart_transfer_to_nearby(game, team, unit_id, unit, target_type_restriction=None, **kwarg):

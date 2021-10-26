@@ -1,7 +1,8 @@
+from multiprocessing import freeze_support
+
 import torch
 
-from train import train, evaluate
-from multiprocessing import freeze_support
+from train import train
 
 
 def main():
