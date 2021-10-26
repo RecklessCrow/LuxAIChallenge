@@ -1,11 +1,13 @@
 import os
 from datetime import datetime
+from luxai2021.game.constants import Constants
 
 # Observation Vector Sizes
 NUM_IDENTIFIERS = 3
-NUM_GAME_STATES = 12
+NUM_GAME_STATES = 13
 NUM_RESOURCES = (5 * 4) + (3 * 3 * 4)
 OBSERVATION_SHAPE = (NUM_IDENTIFIERS + NUM_GAME_STATES + NUM_RESOURCES,)
+RESOURCE_LIST = [Constants.RESOURCE_TYPES.WOOD, Constants.RESOURCE_TYPES.COAL, Constants.RESOURCE_TYPES.URANIUM]
 
 # Observation Constants
 MAX_RESEARCH = 200.0
