@@ -5,7 +5,7 @@ from luxai2021.game.constants import Constants
 # Observation Vector Sizes
 NUM_IDENTIFIERS = 3
 NUM_GAME_STATES = 14
-NUM_RESOURCES = (5 * 4) + (3 * 3 * 4)
+NUM_RESOURCES = (5 * 7) + (3 * 3 * 7)
 OBSERVATION_SHAPE = (NUM_IDENTIFIERS + NUM_GAME_STATES + NUM_RESOURCES,)
 RESOURCE_LIST = [Constants.RESOURCE_TYPES.WOOD, Constants.RESOURCE_TYPES.COAL, Constants.RESOURCE_TYPES.URANIUM]
 

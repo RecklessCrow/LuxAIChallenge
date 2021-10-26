@@ -194,23 +194,20 @@ class LuxAgent(AgentWithModel):
     def add_vector(observation, observation_idx, unit_pos, other_pos):
 
         x_diff = other_pos[0] - unit_pos[0]
-        if x_diff == 0:  # center
-            x_diff = .5
-        elif x_diff > 0:  # up
-            x_diff = 1
-        else:  # down
-            x_diff = 0
-
         y_diff = other_pos[1] - unit_pos[1]
-        if y_diff == 0:  # center
-            y_diff = .5
-        elif y_diff > 0:  # up
-            y_diff = 1
-        else:  # down
-            y_diff = 0
 
-        observation[observation_idx + 0] = x_diff
-        observation[observation_idx + 1] = y_diff
+        if x_diff == 0 and y_diff == 0:
+            observation[observation_idx + 0] = 1
+        elif abs(x_diff) > abs(y_diff):
+            if x_diff > 0:
+                observation[observation_idx + 1] = 1
+            else:
+                observation[observation_idx + 2] = 1
+        else:
+            if y_diff > 0:
+                observation[observation_idx + 3] = 1
+            else:
+                observation[observation_idx + 4] = 1
 
     def get_observation(self, game: Game, unit, city_tile, team, is_new_turn: bool):
         """
@@ -362,7 +359,7 @@ class LuxAgent(AgentWithModel):
         for entity_type in types.keys():
 
             if entity_type not in self.object_nodes:  # if there is none of this entity_type on board
-                observation_idx += 4 * types[entity_type]
+                observation_idx += 7 * types[entity_type]
                 continue
 
             other_units = self.object_nodes[entity_type]
@@ -388,7 +385,7 @@ class LuxAgent(AgentWithModel):
 
             for n in range(types[entity_type]):  # n-nearest
                 if n >= sorted_idx.size:  # n-nearest does not exist
-                    observation_idx += 4
+                    observation_idx += 7
                     continue
 
                 other_position = other_unit_positions[sorted_idx[n]]
@@ -396,12 +393,12 @@ class LuxAgent(AgentWithModel):
 
                 distance = distances[sorted_idx[n]]
                 distance /= game.map.width + game.map.height
-                self.observation[observation_idx + 2] = distance
+                self.observation[observation_idx + 5] = distance
 
                 # 1x amount
                 cargo_amount = self.get_cargo(game, other_units[sorted_idx[n]], entity_type)
-                self.observation[observation_idx + 3] = cargo_amount
-                observation_idx += 4
+                self.observation[observation_idx + 6] = cargo_amount
+                observation_idx += 7
 
 
         # ToDo Worker with fullest inventory (remove self)
@@ -416,13 +413,13 @@ class LuxAgent(AgentWithModel):
 
                 distance = abs(other_pos[0] - current_position[0]) + abs(other_pos[1] - current_position[1])
                 distance /= game.map.width + game.map.height
-                self.observation[observation_idx + 2] = distance
+                self.observation[observation_idx + 5] = distance
 
                 # 1x amount
                 cargo_amount = self.get_cargo(game, max_unit, max_unit.type)
-                self.observation[observation_idx + 3] = cargo_amount
+                self.observation[observation_idx + 6] = cargo_amount
 
-        observation_idx += 4
+        observation_idx += 7
 
         if "city" in self.object_nodes:
             starving_city_tile = min(self.object_nodes["city"], key=lambda x: self.get_cargo(game, x, "city"))
@@ -430,13 +427,13 @@ class LuxAgent(AgentWithModel):
 
             distance = abs(starving_city_tile_position[0] - current_position[0]) + abs(starving_city_tile_position[1] - current_position[1])
             distance /= game.map.width + game.map.height
-            self.observation[observation_idx + 2] = distance
+            self.observation[observation_idx + 5] = distance
 
             self.add_vector(self.observation, observation_idx, current_position, starving_city_tile_position)
             cargo_amount = self.get_cargo(game, starving_city_tile, "city")
-            self.observation[observation_idx + 3] = cargo_amount
+            self.observation[observation_idx + 6] = cargo_amount
 
-        observation_idx += 4
+        observation_idx += 7
         assert observation_idx == NUM_IDENTIFIERS + NUM_GAME_STATES + NUM_RESOURCES
 
         return self.observation
