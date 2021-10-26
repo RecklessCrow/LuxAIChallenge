@@ -25,7 +25,7 @@ def train():
         return LuxEnvironment(
             configs=configs,
             learning_agent=LuxAgent(mode="train"),
-            opponent_agent=LuxAgent(mode="train")
+            opponent_agent=Agent()
         )
 
     if NUM_ENVS > 1:
@@ -43,7 +43,7 @@ def train():
         gamma=GAMMA,
         gae_lambda=GAE_LAMBDA,
         batch_size=BATCH_SIZE,
-        n_steps=NUM_STEPS
+        n_steps=NUM_STEPS,
     )
 
     # Create callbacks for logging
@@ -54,7 +54,7 @@ def train():
     opponent_replay = Agent()
     callbacks.append(
         SaveReplayAndModelCallback(
-            save_freq=100000,
+            save_freq=SAVE_FREQ,
             save_path=CHECKPOINT_PATH,
             name_prefix=TIME_STAMP,
             replay_env=LuxEnvironment(
@@ -69,18 +69,19 @@ def train():
     # Since reward metrics don't work for multi-environment setups, we add an evaluation logger
     # for metrics.
     if NUM_ENVS > 1:
-        num_eval_envs = 4
+
         # An evaluation environment is needed to measure multi-env setups. Use a fixed 4 envs.
-        eval_env = make_vec_env(make_env, num_eval_envs)
+        eval_env = make_vec_env(make_env, NUM_EVAL_ENVS)
 
         callbacks.append(
             EvalCallback(
                 eval_env,
-                best_model_save_path=f'./logs_{TIME_STAMP}/',
-                log_path=f'./logs_{TIME_STAMP}/',
+                best_model_save_path=CALLBACKS_PATH,
+                log_path=CALLBACKS_PATH,
                 eval_freq=NUM_STEPS * 2,  # Run it every 2 training iterations
-                n_eval_episodes=30,  # Run 30 games
-                deterministic=False, render=False
+                n_eval_episodes=NUM_EVAL_GAMES,
+                deterministic=False,
+                render=False
             )
         )
 

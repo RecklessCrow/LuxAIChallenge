@@ -11,6 +11,80 @@ from luxai2021.game.game_constants import GAME_CONSTANTS
 from luxai2021.game.position import Position
 
 
+def smart_transfer_to_nearby(game, team, unit_id, unit, target_type_restriction=None, **kwarg):
+    """
+    Smart-transfers from the specified unit to a nearby neighbor. Prioritizes any
+    nearby carts first, then any worker. Transfers the resource type which the unit
+    has most of. Picks which cart/worker based on choosing a target that is most-full
+    but able to take the most amount of resources.
+    Args:
+        team ([type]): [description]
+        unit_id ([type]): [description]
+    Returns:
+        Action: Returns a TransferAction object, even if the request is an invalid
+                transfer. Use TransferAction.is_valid() to check validity.
+    """
+
+    # Calculate how much resources could at-most be transferred
+    resource_type = None
+    resource_amount = 0
+    target_unit = None
+
+    if unit != None:
+        for type, amount in unit.cargo.items():
+            if amount > resource_amount:
+                resource_type = type
+                resource_amount = amount
+
+        # Find the best nearby unit to transfer to
+        unit_cell = game.map.get_cell_by_pos(unit.pos)
+        adjacent_cells = game.map.get_adjacent_cells(unit_cell)
+
+        for c in adjacent_cells:
+            for id, u in c.units.items():
+                # Apply the unit type target restriction
+                if target_type_restriction == None or u.type == target_type_restriction:
+                    if u.team == team:
+                        # This unit belongs to our team, set it as the winning transfer target
+                        # if it's the best match.
+                        if target_unit is None:
+                            target_unit = u
+                        else:
+                            # Compare this unit to the existing target
+                            if target_unit.type == u.type:
+                                # Transfer to the target with the least capacity, but can accept
+                                # all of our resources
+                                if (u.get_cargo_space_left() >= resource_amount and
+                                        target_unit.get_cargo_space_left() >= resource_amount):
+                                    # Both units can accept all our resources. Prioritize one that is most-full.
+                                    if u.get_cargo_space_left() < target_unit.get_cargo_space_left():
+                                        # This new target it better, it has less space left and can take all our
+                                        # resources
+                                        target_unit = u
+
+                                elif (target_unit.get_cargo_space_left() >= resource_amount):
+                                    # Don't change targets. Current one is best since it can take all
+                                    # the resources, but new target can't.
+                                    pass
+
+                                elif (u.get_cargo_space_left() > target_unit.get_cargo_space_left()):
+                                    # Change targets, because neither target can accept all our resources and
+                                    # this target can take more resources.
+                                    target_unit = u
+                            elif u.type == Constants.UNIT_TYPES.CART:
+                                # Transfer to this cart instead of the current worker target
+                                target_unit = u
+
+    # Build the transfer action request
+    target_unit_id = None
+    if target_unit is not None:
+        target_unit_id = target_unit.id
+
+        # Update the transfer amount based on the room of the target
+        if target_unit.get_cargo_space_left() < resource_amount:
+            resource_amount = target_unit.get_cargo_space_left()
+
+
 class LuxAgent(AgentWithModel):
     def __init__(self, mode="train", model=None):
         super().__init__(mode, model)
@@ -23,11 +97,8 @@ class LuxAgent(AgentWithModel):
             partial(MoveAction, direction=Constants.DIRECTIONS.SOUTH),
             partial(MoveAction, direction=Constants.DIRECTIONS.EAST),
 
-            # ToDo: fix
-            # Transfer to nearby cart
-            # partial(TransferAction, target_type_restriction=Constants.UNIT_TYPES.CART),
-            # Transfer to nearby worker
-            # partial(TransferAction, target_type_restriction=Constants.UNIT_TYPES.WORKER),
+            partial(smart_transfer_to_nearby, target_type_restriction=Constants.UNIT_TYPES.CART),
+            partial(smart_transfer_to_nearby, target_type_restriction=Constants.UNIT_TYPES.WORKER),
 
             SpawnCityAction,
             PillageAction,
@@ -88,7 +159,7 @@ class LuxAgent(AgentWithModel):
                     self.object_nodes[key] = np.array([[cells.pos.x, cells.pos.y]])
                 else:
                     self.object_nodes[key] = np.concatenate(
-                        (self.object_nodes[key],[[cells.pos.x, cells.pos.y]]), axis=0)
+                        (self.object_nodes[key], [[cells.pos.x, cells.pos.y]]), axis=0)
 
     @staticmethod
     def distance(node, nodes):
@@ -155,11 +226,15 @@ class LuxAgent(AgentWithModel):
 
         # 1x cargo size
         if unit is not None:
-            game_states[game_state_idx] = unit.get_cargo_space_left() / GAME_CONSTANTS["PARAMETERS"]["RESOURCE_CAPACITY"]["WORKER"]
+            game_states[game_state_idx] = unit.get_cargo_space_left() / \
+                                          GAME_CONSTANTS["PARAMETERS"]["RESOURCE_CAPACITY"]["WORKER"]
         game_state_idx += 1
 
         # 1x percent of day/night cycle complete
-        game_states[game_state_idx] = (game.state['turn'] % NUM_STEPS_IN_DAY) / NUM_STEPS_IN_DAY
+        if game.is_night():
+            game_states[game_state_idx] = (game.state['turn'] % NUM_STEPS_IN_NIGHT) / NUM_STEPS_IN_NIGHT
+        else:
+            game_states[game_state_idx] = (game.state['turn'] % NUM_STEPS_IN_DAY) / NUM_STEPS_IN_DAY
         game_state_idx += 1
 
         # 1x is night
@@ -229,6 +304,9 @@ class LuxAgent(AgentWithModel):
          
         """
 
+        # ToDo Check unit for team
+        # game.get_teams_units(self.team) ?
+
         types = {
             Constants.RESOURCE_TYPES.WOOD: 3,
             Constants.RESOURCE_TYPES.COAL: 3,
@@ -276,7 +354,7 @@ class LuxAgent(AgentWithModel):
                     y_diff = 0
 
                 # 1x distance
-                distance = np.sqrt((other_pos[0] - unit_pos.x)**2 + (other_pos[1] - unit_pos.y)**2)
+                distance = np.sqrt((other_pos[0] - unit_pos.x) ** 2 + (other_pos[1] - unit_pos.y) ** 2)
 
                 # 1x amount
                 other_cell = game.map.get_cell_by_pos(Position(other_pos[0], other_pos[1]))
@@ -286,11 +364,41 @@ class LuxAgent(AgentWithModel):
 
             entity_detection.append(np.concatenate(n_closest_units))
 
-        # Worker with fullest inventory
+        # ToDo Worker with fullest inventory
         worker_inventory = np.zeros(4)
+        units = game.get_teams_units(self.team)
+
+        if units:
+            def get_unit_cargo(unit):
+                return max(game.get_unit(self.team, unit).cargo.values())
+
+            max_unit_id = max(units, key=get_unit_cargo)
+            max_unit = game.get_unit(self.team, max_unit_id)
+
+            x_diff = max_unit.pos.x - unit_pos.x
+            if x_diff == 0:  # center
+                x_direction = .5
+            elif x_diff > 0:  # up
+                x_direction = 1
+            else:  # down
+                x_direction = 0
+
+            y_diff = max_unit.pos.y - unit_pos.y
+            if y_diff == 0:  # center
+                y_direction = .5
+            elif y_diff > 0:  # up
+                y_direction = 1
+            else:  # down
+                y_direction = 0
+
+            worker_inventory[0] = x_direction
+            worker_inventory[1] = y_direction
+            worker_inventory[2] = np.sqrt((max_unit.pos.x - unit_pos.x) ** 2 + (max_unit.pos.y - unit_pos.y) ** 2)
+            worker_inventory[3] = get_unit_cargo(max_unit_id)
+
         entity_detection.append(worker_inventory)
 
-        # City with least amount of fuel
+        # ToDo City with least amount of fuel
         dying_city = np.zeros(4)
         entity_detection.append(dying_city)
 
