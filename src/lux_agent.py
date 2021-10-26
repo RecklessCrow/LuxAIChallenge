@@ -122,17 +122,27 @@ class LuxAgent(AgentWithModel):
     def game_start(self, game):
         self.last_unit_count = 0
         self.last_city_tile_count = 0
-        self.last_fuel_collected = 0
+        self.last_fuel_deposited = 0
+        self.last_resource_collected = 0
+
+        self.total_amount_wood = 0
+        for cell in game.map.resources:
+            if cell.resource.type == Constants.RESOURCE_TYPES.WOOD:
+                self.total_amount_wood += self.get_cargo(game, cell, Constants.RESOURCE_TYPES.WOOD)
 
     def get_map_contents(self, game, my_team):
         # Build a list of object nodes by type for quick distance-searches
         self.object_nodes = {}
 
+        self.amount_wood_left = 0
         # Add resources
         for cell in game.map.resources:
             if cell.resource.type not in self.object_nodes:
                 self.object_nodes[cell.resource.type] = []
             self.object_nodes[cell.resource.type].append(cell)
+
+            if cell.resource.type == Constants.RESOURCE_TYPES.WOOD:
+                self.amount_wood_left += self.get_cargo(game, cell, Constants.RESOURCE_TYPES.WOOD)
 
         # Add your own and opponent units
         for team in [my_team, (my_team + 1) % 2]:
@@ -156,6 +166,8 @@ class LuxAgent(AgentWithModel):
                 if key not in self.object_nodes:
                     self.object_nodes[key] = []
                 self.object_nodes[key].append(cell.city_tile)
+
+
 
         # for key in self.object_nodes:
         #     self.object_nodes[key] = np.array(self.object_nodes[key])
@@ -273,6 +285,10 @@ class LuxAgent(AgentWithModel):
                 self.observation[observation_idx + 1] = len(self.object_nodes[(key + "_opponent")]) / MAX_UNIT_COUNT
             observation_idx += 2
 
+        # 1x percent wood left
+        self.observation[observation_idx] = self.amount_wood_left / self.total_amount_wood
+        observation_idx += 1
+
         # 1x research points
         self.observation[observation_idx] = game.state["teamStates"][team]["researchPoints"] / MAX_RESEARCH
         observation_idx += 1
@@ -379,6 +395,7 @@ class LuxAgent(AgentWithModel):
                 self.add_vector(self.observation, observation_idx, current_position, other_position)
 
                 distance = distances[sorted_idx[n]]
+                distance /= game.map.width + game.map.height
                 self.observation[observation_idx + 2] = distance
 
                 # 1x amount
@@ -398,6 +415,7 @@ class LuxAgent(AgentWithModel):
                 self.add_vector(self.observation, observation_idx, current_position, other_pos)
 
                 distance = abs(other_pos[0] - current_position[0]) + abs(other_pos[1] - current_position[1])
+                distance /= game.map.width + game.map.height
                 self.observation[observation_idx + 2] = distance
 
                 # 1x amount
@@ -411,6 +429,7 @@ class LuxAgent(AgentWithModel):
             starving_city_tile_position = [starving_city_tile.pos.x, starving_city_tile.pos.y]
 
             distance = abs(starving_city_tile_position[0] - current_position[0]) + abs(starving_city_tile_position[1] - current_position[1])
+            distance /= game.map.width + game.map.height
             self.observation[observation_idx + 2] = distance
 
             self.add_vector(self.observation, observation_idx, current_position, starving_city_tile_position)
@@ -486,10 +505,15 @@ class LuxAgent(AgentWithModel):
         unit_growth = unit_count - self.last_unit_count
         self.last_unit_count = unit_count
 
-        # Amount of fuel collected
-        fuel_collected = game.stats["teamStats"][self.team]["fuelGenerated"]
-        fuel_growth = fuel_collected - self.last_fuel_collected
-        self.last_fuel_collected = fuel_collected
+        # Amount of fuel deposited
+        fuel_deposited = game.stats["teamStats"][self.team]["fuelGenerated"]
+        fuel_growth = fuel_deposited - self.last_fuel_deposited
+        self.last_fuel_deposited = fuel_deposited
+
+        # Amount of resource gathered
+        resource_collected = sum(game.stats["teamStats"][self.team]["resourcesCollected"].values())
+        resc_growth = resource_collected - self.last_resource_collected
+        self.last_resource_collected = resource_collected
 
         """
         End of game
@@ -523,9 +547,14 @@ class LuxAgent(AgentWithModel):
         if city_growth < 0:
             city_growth *= 1.5
 
+        # bigger negative reward than positive
+        if unit_growth < 0:
+            unit_growth *= 1.2
+
         reward += city_growth * CITY_REWARD_MODIFIER
         reward += unit_growth * UNIT_REWARD_MODIFIER
         reward += fuel_growth * FUEL_REWARD_MODIFIER
+        reward += resc_growth * RESC_REWARD_MODIFIER
         reward += lead_amount * LEAD_REWARD_MODIFIER
 
         return reward
