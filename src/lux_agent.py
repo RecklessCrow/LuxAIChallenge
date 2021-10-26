@@ -157,12 +157,12 @@ class LuxAgent(AgentWithModel):
                     self.object_nodes[key] = []
                 self.object_nodes[key].append(cell.city_tile)
 
-        for key in self.object_nodes:
-            self.object_nodes[key] = np.array(self.object_nodes[key])
+        # for key in self.object_nodes:
+        #     self.object_nodes[key] = np.array(self.object_nodes[key])
 
     @staticmethod
     def distance(node, nodes):
-        return np.sum((nodes - node) ** 2, axis=1)
+        return np.sum((nodes - node), axis=1)
 
     @staticmethod
     def get_cargo(game, unit, unit_type):
@@ -177,16 +177,27 @@ class LuxAgent(AgentWithModel):
     @staticmethod
     def add_vector(observation, observation_idx, unit_pos, other_pos):
 
-        difference = other_pos - unit_pos
-        difference[difference > 0] = 1
-        difference[difference < 0] = 0
-        difference[difference == 0] = .5
-
         # 1x distance
-        distance = np.linalg.norm(other_pos - unit_pos)
+        distance = abs(other_pos[0] - unit_pos[0]) + abs(other_pos[1] - unit_pos[1])
 
-        observation[observation_idx + 0] = difference[0]
-        observation[observation_idx + 1] = difference[1]
+        x_diff = other_pos[0] - unit_pos[0]
+        if x_diff == 0:  # center
+            x_diff = .5
+        elif x_diff > 0:  # up
+            x_diff = 1
+        else:  # down
+            x_diff = 0
+
+        y_diff = other_pos[1] - unit_pos[1]
+        if y_diff == 0:  # center
+            y_diff = .5
+        elif y_diff > 0:  # up
+            y_diff = 1
+        else:  # down
+            y_diff = 0
+
+        observation[observation_idx + 0] = x_diff
+        observation[observation_idx + 1] = y_diff
         observation[observation_idx + 2] = distance / 100
 
     def get_observation(self, game: Game, unit, city_tile, team, is_new_turn: bool):
@@ -315,9 +326,9 @@ class LuxAgent(AgentWithModel):
         assert observation_idx == NUM_IDENTIFIERS + NUM_GAME_STATES
 
         if unit is not None:
-            current_position = np.array([unit.pos.x, unit.pos.y])
+            current_position = [unit.pos.x, unit.pos.y]
         else:
-            current_position = np.array([city_tile.pos.x, city_tile.pos.y])
+            current_position = [city_tile.pos.x, city_tile.pos.y]
 
         types = {
             Constants.RESOURCE_TYPES.WOOD: 3,
@@ -327,6 +338,9 @@ class LuxAgent(AgentWithModel):
             str(Constants.UNIT_TYPES.WORKER): 1,
             str(Constants.UNIT_TYPES.CART): 1
         }
+
+        if unit is None:
+            return self.observation
 
         # Nearest Entity
         for entity_type in types.keys():
