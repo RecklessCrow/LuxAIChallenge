@@ -1,7 +1,6 @@
-import os
-from glob import glob
+from main_maker import *
 
-import main_maker
+main_maker()
 
 agents = [filename for filename in glob(os.path.join("model_drivers", "*.py"))]
 

@@ -1,7 +1,7 @@
-from ..lux_agent import LuxAgent
 from luxai2021.env.agent import AgentFromStdInOut
 from luxai2021.env.lux_env import LuxEnvironment
 from luxai2021.game.constants import LuxMatchConfigs_Default
+from ..lux_agent import LuxAgent
 
 if __name__ == "__main__":
     """
