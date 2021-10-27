@@ -541,8 +541,6 @@ class LuxAgent(AgentWithModel):
             if lead_amount == 0:
                 lead_amount = unit_count - unit_count_opponent
 
-        return lead_amount * LEAD_REWARD_MODIFIER
-
         reward = 0.0
 
         # Incentivize Research

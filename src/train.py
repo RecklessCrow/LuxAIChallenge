@@ -48,10 +48,10 @@ def action_mask_fn(env: LuxEnvironment):
     return valid_actions
 
 
-def make_env():
+def make_env(mode="train"):
     return ActionMasker(LuxEnvironment(
         configs=CONFIGS,
-        learning_agent=LuxAgent(),
+        learning_agent=LuxAgent(mode=mode),
         opponent_agent=Agent()
     ), action_mask_fn)
 
@@ -89,18 +89,12 @@ def train():
     callbacks = []
 
     # Replay & Checkpoint
-    player_replay = LuxAgent(mode="inference", model=model)
-    opponent_replay = Agent()
     callbacks.append(
         SaveReplayAndModelCallback(
             save_freq=SAVE_FREQ,
             save_path=CHECKPOINT_PATH,
             name_prefix=TIME_STAMP,
-            replay_env=LuxEnvironment(
-                configs=CONFIGS,
-                learning_agent=player_replay,
-                opponent_agent=opponent_replay
-            ),
+            replay_env=make_env(mode="inference"),
             replay_num_episodes=5
         )
     )
