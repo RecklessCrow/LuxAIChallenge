@@ -13,7 +13,7 @@ def make_env(mode="train", model=None):
     return LuxEnvironment(
         configs=CONFIGS,
         learning_agent=LuxAgent(mode=mode, model=model),
-        opponent_agent=Agent()
+        opponent_agent=LuxAgent(mode='inference', model=model)
     )
 
 
@@ -31,7 +31,7 @@ def train():
     if NUM_ENVS > 1:
         train_env = make_vec_env(make_env, NUM_ENVS)
     else:
-        train_env = make_env()
+        train_env = make_env(model)
 
     # Create Model
     model = MaskablePPO(
@@ -64,7 +64,7 @@ def train():
     # for metrics.
     if NUM_ENVS > 1:
         # An evaluation environment is needed to measure multi-env setups. Use a fixed 4 envs.
-        eval_env = make_vec_env(make_env, NUM_EVAL_ENVS)
+        eval_env = make_vec_env(lambda: make_env(model), NUM_EVAL_ENVS)
 
         callbacks.append(
             EvalCallback(

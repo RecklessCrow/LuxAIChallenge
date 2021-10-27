@@ -245,7 +245,7 @@ class LuxAgent(AgentWithModel):
 
         """
         Game State - 12x:
-         - 1x cargo size
+         - 1x cargo size of current unit
          - 1x percent of day state complete
          - 1x is night
          - 1x percent of day/night cycle complete

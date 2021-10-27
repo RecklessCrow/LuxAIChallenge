@@ -91,9 +91,11 @@ class LuxEnvironment(gym.Env):
 
         # Create the game
         self.game = Game(configs)
-        self.match_controller = MatchController(self.game,
+        self.match_controller = MatchController(
+            self.game,
                                                 agents=[learning_agent, opponent_agent],
-                                                replay_validate=replay_validate)
+                                                replay_validate=replay_validate
+        )
 
         self.replay_prefix = replay_prefix
         self.replay_folder = replay_folder

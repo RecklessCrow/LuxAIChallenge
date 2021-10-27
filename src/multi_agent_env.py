@@ -1,3 +1,4 @@
+import numpy as np
 from pettingzoo import AECEnv
 
 from constants import *
@@ -15,14 +16,23 @@ class MultiAgentLuxEnv(AECEnv):
 
         # Create the game
         self.game = Game(configs)
-        self.match_controller = MatchController(self.game,
-                                                agents=[agent0, agent1],
-                                                replay_validate=replay_validate)
+        self.match_controller = MatchController(
+            self.game,
+            agents=[agent0, agent1],
+            replay_validate=replay_validate
+        )
 
         self.replay_prefix = replay_prefix
         self.replay_folder = replay_folder
 
-        self.possible_agents = [agent0, agent1]
+        self.possible_agents = {
+            Constants.TEAM.A: agent0,
+            Constants.TEAM.B: agent1
+        }
+
+        self.observation_spaces = {
+
+        }
 
         self.current_step = 0
         self.match_generator = None
@@ -30,7 +40,7 @@ class MultiAgentLuxEnv(AECEnv):
         self.last_observation_object = None
 
     def step(self, action_code):
-        agent = self.agent_selection
+        agent = self.agents[self.last_observation_object[2]]
 
         agent.take_action(
             action_code,
@@ -90,7 +100,8 @@ class MultiAgentLuxEnv(AECEnv):
         self.dones = {agent: False for agent in self.agents}
         self.infos = {agent: {} for agent in self.agents}
         self.state = {agent: NONE for agent in self.agents}
-        self.observations = {agent: agent.get_observation(self.game, unit, city_tile, team, is_new_turn) for agent in self.agents}
+        self.observations = {agent: agent.get_observation(self.game, unit, city_tile, team, is_new_turn) for agent in
+                             self.agents}
         self.num_moves = 0
 
         self._agent_selector = agent_selector(self.agents)
