@@ -122,7 +122,13 @@ class LuxAgent(AgentWithModel):
         self.last_unit_count = 0
         self.last_city_tile_count = 0
         self.last_fuel_deposited = 0
-        self.last_resource_collected = 0
+
+        self.coal_is_researched = False
+        self.uranium_is_researched = False
+        self.last_wood = 0
+        self.last_coal = 0
+        self.last_uranium = 0
+        self.old_research = 0
 
         self.total_amount_wood = 0
         for cell in game.map.resources:
@@ -500,13 +506,21 @@ class LuxAgent(AgentWithModel):
 
         # Amount of fuel deposited
         fuel_deposited = game.stats["teamStats"][self.team]["fuelGenerated"]
-        fuel_growth = fuel_deposited - self.last_fuel_deposited
+        fuel_deposited_growth = fuel_deposited - self.last_fuel_deposited
         self.last_fuel_deposited = fuel_deposited
 
         # Amount of resource gathered
-        resource_collected = sum(game.stats["teamStats"][self.team]["resourcesCollected"].values())
-        resc_growth = resource_collected - self.last_resource_collected
-        self.last_resource_collected = resource_collected
+        resources_collected = game.stats["teamStats"][self.team]["resourcesCollected"]
+
+        wood_gathered = resources_collected['wood'] - self.last_wood
+        self.last_wood = resources_collected['wood']
+
+        coal_gathered = resources_collected['coal'] - self.last_coal
+        self.last_coal = resources_collected['coal']
+
+        uranium_gathered = resources_collected['uranium'] - self.last_uranium
+        self.last_uranium = resources_collected['uranium']
+
 
         """
         End of game
@@ -538,16 +552,20 @@ class LuxAgent(AgentWithModel):
 
         # bigger negative reward than positive
         if city_growth < 0:
-            city_growth *= 1.5
+            city_growth *= NEGATIVE_CITY_MODIFIER
 
         # bigger negative reward than positive
         if unit_growth < 0:
-            unit_growth *= 1.2
+            unit_growth *= NEGATIVE_UNIT_MODIFIER
 
         reward += city_growth * CITY_REWARD_MODIFIER
         reward += unit_growth * UNIT_REWARD_MODIFIER
-        reward += fuel_growth * FUEL_REWARD_MODIFIER
-        reward += resc_growth * RESC_REWARD_MODIFIER
+
+        reward += fuel_deposited_growth * FUEL_DEPOSITED_REWARD_MODIFIER
+        reward += wood_gathered * WOOD_GATHERED_REWARD_MODIFIER
+        reward += coal_gathered * COAL_GATHERED_REWARD_MODIFIER
+        reward += uranium_gathered * URANIUM_GATHERED_REWARD_MODIFIER
+
         reward += lead_amount * LEAD_REWARD_MODIFIER
 
         return reward
