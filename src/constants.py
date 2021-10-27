@@ -45,9 +45,9 @@ TRAINING_STEPS = 10_000_000
 NUM_STEPS = BATCH_SIZE
 
 # Multiprocessing
-NUM_EVAL_ENVS = 4  # enables multiprocessing
+NUM_EVAL_ENVS = 1  # enables multiprocessing
 NUM_EVAL_GAMES = 30
-NUM_ENVS = os.cpu_count() - NUM_EVAL_ENVS if NUM_EVAL_ENVS > 1 and os.cpu_count() > 0 else 1
+NUM_ENVS = 60
 
 # Logging
 NUM_REPLAYS = 10

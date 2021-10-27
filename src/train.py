@@ -29,6 +29,20 @@ def train():
     # Create Environment
 
     if NUM_ENVS > 1:
+        dummy_env = make_vec_env(
+            lambda: LuxEnvironment(
+                configs=CONFIGS,
+                learning_agent=LuxAgent(),
+                opponent_agent=Agent(),
+            ), NUM_ENVS)
+    else:
+        LuxEnvironment(
+            configs=CONFIGS,
+            learning_agent=LuxAgent(),
+            opponent_agent=Agent(),
+        )
+
+    if NUM_ENVS > 1:
         train_env = make_vec_env(make_env, NUM_ENVS)
     else:
         train_env = make_env(model)
@@ -64,7 +78,7 @@ def train():
     # for metrics.
     if NUM_ENVS > 1:
         # An evaluation environment is needed to measure multi-env setups. Use a fixed 4 envs.
-        eval_env = make_vec_env(lambda: make_env(model), NUM_EVAL_ENVS)
+        eval_env = make_vec_env(lambda: make_env(model, mode="inference"), NUM_EVAL_ENVS)
 
         callbacks.append(
             EvalCallback(
