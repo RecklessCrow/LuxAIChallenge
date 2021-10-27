@@ -244,12 +244,29 @@ class LuxEnvironment(gym.Env):
         else:
             unit = self.last_observation_object[0]
 
-            for i in range(7):
-                valid_actions[i] = True  # movement. Check for if unit is on map boarder?
+            # for i in range(7):
+            #     valid_actions[i] = True  # movement. Check for if unit is on map boarder?
 
-            # ToDo
-            #  valid_actions[5] if worker adjacent
-            #  valid_actions[6] if cart adjacent
+            valid_actions[0] = True
+
+            unit_up    = [unit.pos.x, unit.pos.y + 1]
+            unit_down  = [unit.pos.x, unit.pos.y - 1]
+            unit_left  = [unit.pos.x + 1, unit.pos.y]
+            unit_right = [unit.pos.x - 1, unit.pos.y]
+
+            nearby = [unit_up, unit_down, unit_left, unit_right]
+            for idx, near in enumerate(nearby):
+                cell = self.game.map.get_cell_by_pos(near)
+
+                if cell.city_tile is not None:
+                    valid_actions[idx + 1] = True
+                    continue
+
+                if not cell.has_units():
+                    valid_actions[idx + 1] = True
+                else:
+                    valid_actions[5] = True
+                    valid_actions[6] = True
 
             if unit.is_worker():
                 if unit.can_build(self.game.map):
@@ -258,5 +275,7 @@ class LuxEnvironment(gym.Env):
                 cell = self.game.map.get_cell_by_pos(unit.pos)
                 if cell.road > self.game.configs["parameters"]["MIN_ROAD"]:
                     valid_actions[8] = True
+
+
 
         return valid_actions

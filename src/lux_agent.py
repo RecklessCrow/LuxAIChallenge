@@ -93,9 +93,10 @@ class LuxAgent(AgentWithModel):
         self.unit_actions = [
             partial(MoveAction, direction=Constants.DIRECTIONS.CENTER),  # No Op
             partial(MoveAction, direction=Constants.DIRECTIONS.NORTH),
-            partial(MoveAction, direction=Constants.DIRECTIONS.WEST),
             partial(MoveAction, direction=Constants.DIRECTIONS.SOUTH),
             partial(MoveAction, direction=Constants.DIRECTIONS.EAST),
+            partial(MoveAction, direction=Constants.DIRECTIONS.WEST),
+
 
             partial(smart_transfer_to_nearby, target_type_restriction=Constants.UNIT_TYPES.CART),
             partial(smart_transfer_to_nearby, target_type_restriction=Constants.UNIT_TYPES.WORKER),
