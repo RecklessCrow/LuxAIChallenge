@@ -13,9 +13,8 @@ def main_maker():
     for f in os.listdir(dir):
         os.remove(os.path.join(dir, f))
 
-    os.chdir("models")
-    for model_path in glob(os.path.join("*.zip")):
-        with open(os.path.join("..", "model_drivers", f"{model_path[:-4]}.py"), 'w+') as f:
+    for model_path in glob(os.path.join("models", "*.zip")):
+        with open(os.path.join("model_drivers", f"{model_path.split(os.sep)[-1][:-3]}py"), 'w+') as f:
             f.write("from stable_baselines3 import PPO\n")
             f.write(f"model = PPO.load(\"{model_path}\")\n")
-            f.write(open(os.path.join("..", "base_main.py")).read())
+            f.write(open(os.path.join("base_main.py")).read())

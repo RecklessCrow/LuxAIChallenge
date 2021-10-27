@@ -45,7 +45,7 @@ TRAINING_STEPS = 10_000_000
 NUM_STEPS = BATCH_SIZE
 
 # Multiprocessing
-NUM_EVAL_ENVS = 1  # enables multiprocessing
+NUM_EVAL_ENVS = 4  # enables multiprocessing
 NUM_EVAL_GAMES = 30
 NUM_ENVS = 60
 
