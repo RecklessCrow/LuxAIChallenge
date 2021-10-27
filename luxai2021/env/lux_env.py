@@ -280,6 +280,4 @@ class LuxEnvironment(gym.Env):
                 if cell.road > self.game.configs["parameters"]["MIN_ROAD"]:
                     valid_actions[8] = True
 
-
-
         return valid_actions
