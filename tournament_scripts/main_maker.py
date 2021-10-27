@@ -1,20 +1,23 @@
 import os
+import shutil
 from glob import glob
 
 
 def main_maker():
-    if not os.path.exists("model_drivers"):
-        os.mkdir("model_drivers")
+    dir = "model_drivers"
+    if os.path.exists(dir):
+        shutil.rmtree(dir)
+
+    os.mkdir(dir)
 
     if not os.path.exists("models"):
         os.mkdir("models")
 
-    dir = "model_drivers"
-    for f in os.listdir(dir):
-        os.remove(os.path.join(dir, f))
+    shutil.copyfile(os.path.join("..", "src", "lux_agent.py"), os.path.join(dir, "lux_agent.py"))
+    shutil.copyfile(os.path.join("..", "src", "constants.py"), os.path.join(dir, "constants.py"))
 
     for model_path in glob(os.path.join("models", "*.zip")):
         with open(os.path.join("model_drivers", f"{model_path.split(os.sep)[-1][:-3]}py"), 'w+') as f:
             f.write("from stable_baselines3 import PPO\n")
-            f.write(f"model = PPO.load(\"{model_path}\")\n")
+            f.write(f"model = PPO.load(\"{os.path.join('..', model_path)}\")\n")
             f.write(open(os.path.join("base_main.py")).read())
