@@ -25,7 +25,7 @@ def train():
         return LuxEnvironment(
             configs=configs,
             learning_agent=LuxAgent(mode="train"),
-            opponent_agent=LuxAgent(mode="inference", model=PPO.load(SAVED_MODEL_PATH))
+            opponent_agent=Agent()
         )
 
     if NUM_ENVS > 1:
@@ -51,7 +51,7 @@ def train():
 
     # Replay & Checkpoint
     player_replay = LuxAgent(mode="inference", model=model)
-    opponent_replay = LuxAgent(mode="inference", model=PPO.load(SAVED_MODEL_PATH))
+    opponent_replay = Agent()
     callbacks.append(
         SaveReplayAndModelCallback(
             save_freq=SAVE_FREQ,
