@@ -51,4 +51,4 @@ CALLBACKS_PATH = os.path.join(LOGS_PATH, f"{TIME_STAMP}")
 
 MODEL_CHECKPOINT_PATH = os.path.join(CHECKPOINT_PATH, TIME_STAMP)
 MODEL_PATH = os.path.join("..", "models", f"{TIME_STAMP}.zip")
-SAVED_MODEL_PATH = os.path.join("..", "models", "10-25_15-54-27.zip")
+SAVED_MODEL_PATH = os.path.join("..", "models", "10-26_19-00-23.zip")

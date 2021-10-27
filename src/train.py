@@ -1,4 +1,4 @@
-from stable_baselines3 import PPO
+from stable_baselines3 import PPO, TD3
 from stable_baselines3.common.callbacks import EvalCallback
 from stable_baselines3.common.env_util import make_vec_env
 
@@ -25,7 +25,7 @@ def train():
         return LuxEnvironment(
             configs=configs,
             learning_agent=LuxAgent(mode="train"),
-            opponent_agent=Agent()
+            opponent_agent=LuxAgent(mode="inference", model=PPO.load(SAVED_MODEL_PATH))
         )
 
     if NUM_ENVS > 1:
@@ -51,7 +51,7 @@ def train():
 
     # Replay & Checkpoint
     player_replay = LuxAgent(mode="inference", model=model)
-    opponent_replay = Agent()
+    opponent_replay = LuxAgent(mode="inference", model=PPO.load(SAVED_MODEL_PATH))
     callbacks.append(
         SaveReplayAndModelCallback(
             save_freq=SAVE_FREQ,
@@ -97,7 +97,7 @@ def train():
 
     print("Done training model.")
 
-    evaluate(model)
+    # evaluate(model)
 
 
 def evaluate(model=None):
