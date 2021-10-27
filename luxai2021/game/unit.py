@@ -60,7 +60,6 @@ class Unit(Actionable):
             self.cargo["uranium"] * self.configs["parameters"]["RESOURCE_TO_FUEL_RATE"]["URANIUM"]
         )
 
-
     def spend_fuel_to_survive(self):
         """
         Implements /src/Unit/index.ts -> Unit.spendFuelToSurvive()

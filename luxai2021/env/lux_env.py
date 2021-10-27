@@ -127,13 +127,15 @@ class LuxEnvironment(gym.Env):
         :param action_code:
         :return:
         """
+
         # Decision for 1 unit or city
-        self.learning_agent.take_action(action_code,
-                                        self.game,
-                                        unit=self.last_observation_object[0],
-                                        city_tile=self.last_observation_object[1],
-                                        team=self.last_observation_object[2]
-                                        )
+        self.learning_agent.take_action(
+            action_code,
+            self.game,
+            unit=self.last_observation_object[0],
+            city_tile=self.last_observation_object[1],
+            team=self.last_observation_object[2]
+        )
 
         self.current_step += 1
 

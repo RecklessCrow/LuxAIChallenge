@@ -61,12 +61,12 @@ class ActionSequence():
         self.unit_id = unit_id
         self.citytile = citytile
         self.kwarg = kwarg
-    
+
     def get_next_action(self, game):
         # Construct the next action. Note: x and y may be wrong since they may have changed
         # TODO: Fix x and y if doing citytile actions or build city action.
         return self.actions.pop(0)(unit_id=self.unit_id, citytile=self.citytile, **self.kwarg)
-    
+
     def is_done(self):
         return len(self.actions) == 0
 
@@ -97,7 +97,7 @@ class MatchController:
             # Initialize agent
             agent.set_team(i)
             agent.set_controller(self)
-        
+
         # Reset the agents, without resetting the game
         self.reset(reset_game=False)
 
@@ -128,13 +128,13 @@ class MatchController:
         if reset_game:
             self.game.reset()
         self.action_buffer = []
-        self.accumulated_stats = dict( {Constants.TEAM.A: {}, Constants.TEAM.B: {}} )
+        self.accumulated_stats = dict({Constants.TEAM.A: {}, Constants.TEAM.B: {}})
 
         # Call the agent game_start() callbacks
         for agent in self.agents:
             agent.game_start(self.game)
 
-    def take_action(self, action):
+    def take_action(self, action: ActionSequence):
         """
          Adds the specified action to the action buffer
          """
@@ -146,13 +146,13 @@ class MatchController:
                 if sequence.is_done():
                     return
                 action = sequence.get_next_action(self.game)
-                if action == None:
+                if action is None:
                     return
 
                 if not sequence.is_done():
-                    if sequence.unit_id != None:
+                    if sequence.unit_id is not None:
                         self.action_sequences[sequence.unit_id] = sequence
-                    elif sequence.citytile != None:
+                    elif sequence.citytile is not None:
                         self.action_sequences[sequence.citytile] = sequence
 
             # Validate the action
@@ -162,9 +162,9 @@ class MatchController:
                     self.action_buffer.append(action)
                     self.accumulated_stats = action.commit_action_update_stats(self.game, self.accumulated_stats)
                 else:
-                    #print(f'action is invalid {action} turn {self.game.state["turn"]}: {vars(action)}', file=sys.stderr)
+                    # print(f'action is invalid {action} turn {self.game.state["turn"]}: {vars(action)}', file=sys.stderr)
                     pass
-                    
+
             except KeyError:
                 print(f'action failed, probably a dead unit {action}: {vars(action)}', file=sys.stderr)
 
@@ -190,7 +190,7 @@ class MatchController:
         """
          Adds the specified action to the action buffer
         """
-        if actions != None:
+        if actions is not None:
             for action in actions:
                 self.take_action(action)
 
@@ -251,7 +251,7 @@ class MatchController:
                 elif actionable == None:
                     # Delete the action sequence, the object isn't valid anymore
                     self.action_sequences.pop(id)
-            
+
             # Run agent.turn_heurstics() to apply any agent heristics to give units orders
             for agent in self.agents:
                 agent.turn_heurstics(self.game, is_first_turn)
@@ -275,7 +275,6 @@ class MatchController:
                             # The enviornment then handles this unit, and calls take_action() to buffer a requested action
                             yield unit, None, unit.team, new_turn
                             new_turn = False
-                            
 
                     cities = self.game.cities.values()
                     for city in cities:
@@ -289,9 +288,10 @@ class MatchController:
                                     new_turn = False
 
                     time_taken = time.time() - start_time
-            
+
             # Reset the can_act overrides for all units and city_tiles
-            units = list(self.game.state["teamStates"][0]["units"].values()) + list(self.game.state["teamStates"][1]["units"].values())
+            units = list(self.game.state["teamStates"][0]["units"].values()) + list(
+                self.game.state["teamStates"][1]["units"].values())
             for unit in units:
                 unit.set_can_act_override(None)
             for city in self.game.cities.values():
@@ -303,7 +303,7 @@ class MatchController:
             # Now let the game actually process the requested actions and play the turn
             try:
                 # Run post-turn agent events to allow for them to handle running the turn instead (used in a kaggle submission agent)
-                self.accumulated_stats = dict( {Constants.TEAM.A: {}, Constants.TEAM.B: {}} )
+                self.accumulated_stats = dict({Constants.TEAM.A: {}, Constants.TEAM.B: {}})
                 handled = False
                 for agent in self.agents:
                     if agent.post_turn(self.game, self.action_buffer):
@@ -321,4 +321,5 @@ class MatchController:
             self.action_buffer = []
 
             if self.replay_validate is not None:
-                self.game.process_updates(self.replay_validate['steps'][turn+1][0]['observation']['updates'], assign=False)
+                self.game.process_updates(self.replay_validate['steps'][turn + 1][0]['observation']['updates'],
+                                          assign=False)

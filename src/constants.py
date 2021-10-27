@@ -1,6 +1,8 @@
 import os
 from datetime import datetime
-from luxai2021.game.constants import Constants
+from luxai2021.game.constants import Constants, LuxMatchConfigs_Default
+
+CONFIGS = LuxMatchConfigs_Default
 
 # Observation Vector Sizes
 NUM_IDENTIFIERS = 3
@@ -26,10 +28,12 @@ FUEL_DEPOSITED_REWARD_MODIFIER = 0.001
 WOOD_GATHERED_REWARD_MODIFIER = 0.0005
 COAL_GATHERED_REWARD_MODIFIER = WOOD_GATHERED_REWARD_MODIFIER * 10
 URANIUM_GATHERED_REWARD_MODIFIER = COAL_GATHERED_REWARD_MODIFIER * 10
-COAL_UNLOCKED = 10
+COAL_UNLOCKED = 0.5
 URANIUM_UNLOCKED = COAL_UNLOCKED * 2
 
-LEAD_REWARD_MODIFIER = CITY_REWARD_MODIFIER * 5
+LEAD_REWARD_MODIFIER = 1
+GAME_WIN = 1
+GAME_LOSS = -GAME_WIN
 
 # Hyper Parameters
 LEARNING_RATE = 0.0001
@@ -42,7 +46,7 @@ NUM_STEPS = BATCH_SIZE
 # Multiprocessing
 NUM_EVAL_ENVS = 4  # enables multiprocessing
 NUM_EVAL_GAMES = 30
-NUM_ENVS = os.cpu_count() - NUM_EVAL_ENVS if NUM_EVAL_GAMES > 1 else 1
+NUM_ENVS = os.cpu_count() - NUM_EVAL_ENVS if NUM_EVAL_ENVS > 1 and os.cpu_count() > 0 else 1
 
 # Logging
 NUM_REPLAYS = 10
@@ -59,4 +63,4 @@ CALLBACKS_PATH = os.path.join(LOGS_PATH, f"{TIME_STAMP}")
 
 MODEL_CHECKPOINT_PATH = os.path.join(CHECKPOINT_PATH, TIME_STAMP)
 MODEL_PATH = os.path.join("..", "models", f"{TIME_STAMP}.zip")
-SAVED_MODEL_PATH = os.path.join("..", "models", "10-26_19-00-23.zip")
+SAVED_MODEL_PATH = os.path.join("..", "models", "10-27_03-15-57.zip")

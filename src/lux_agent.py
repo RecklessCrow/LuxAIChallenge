@@ -8,6 +8,7 @@ from luxai2021.env.agent import AgentWithModel
 from luxai2021.game.actions import *
 from luxai2021.game.game import Game
 from luxai2021.game.game_constants import GAME_CONSTANTS
+from luxai2021.game.constants import Constants
 
 
 def smart_transfer_to_nearby(game, team, unit_id, unit, target_type_restriction=None, **kwarg):
@@ -29,7 +30,7 @@ def smart_transfer_to_nearby(game, team, unit_id, unit, target_type_restriction=
     resource_amount = 0
     target_unit = None
 
-    if unit != None:
+    if unit is not None:
         for type, amount in unit.cargo.items():
             if amount > resource_amount:
                 resource_type = type
@@ -42,7 +43,7 @@ def smart_transfer_to_nearby(game, team, unit_id, unit, target_type_restriction=
         for c in adjacent_cells:
             for id, u in c.units.items():
                 # Apply the unit type target restriction
-                if target_type_restriction == None or u.type == target_type_restriction:
+                if target_type_restriction is None or u.type == target_type_restriction:
                     if u.team == team:
                         # This unit belongs to our team, set it as the winning transfer target
                         # if it's the best match.
@@ -61,12 +62,12 @@ def smart_transfer_to_nearby(game, team, unit_id, unit, target_type_restriction=
                                         # resources
                                         target_unit = u
 
-                                elif (target_unit.get_cargo_space_left() >= resource_amount):
+                                elif target_unit.get_cargo_space_left() >= resource_amount:
                                     # Don't change targets. Current one is best since it can take all
                                     # the resources, but new target can't.
                                     pass
 
-                                elif (u.get_cargo_space_left() > target_unit.get_cargo_space_left()):
+                                elif u.get_cargo_space_left() > target_unit.get_cargo_space_left():
                                     # Change targets, because neither target can accept all our resources and
                                     # this target can take more resources.
                                     target_unit = u
@@ -540,13 +541,7 @@ class LuxAgent(AgentWithModel):
             if lead_amount == 0:
                 lead_amount = unit_count - unit_count_opponent
 
-            '''
-            # game win/loss reward
-            if game.get_winning_team() == self.team:
-                # Win
-            else:
-                # Loss
-            '''
+        return lead_amount * LEAD_REWARD_MODIFIER
 
         reward = 0.0
 
@@ -574,7 +569,6 @@ class LuxAgent(AgentWithModel):
         reward += wood_gathered * WOOD_GATHERED_REWARD_MODIFIER
         reward += coal_gathered * COAL_GATHERED_REWARD_MODIFIER
         reward += uranium_gathered * URANIUM_GATHERED_REWARD_MODIFIER
-
         reward += lead_amount * LEAD_REWARD_MODIFIER
 
         return reward
