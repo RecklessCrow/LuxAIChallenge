@@ -11,49 +11,12 @@ from luxai2021.env.agent import Agent
 from luxai2021.env.lux_env import LuxEnvironment, SaveReplayAndModelCallback
 
 
-def action_mask_fn(env: LuxEnvironment):
-    valid_actions = np.zeros(env.action_space.n)
-
-    city_tile = env.last_observation_object[1]
-    if city_tile is not None:
-        city_count = 0
-
-        for city in env.game.cities.values():
-            if city.team == city_tile.team:
-                city_count += 1
-
-        if city_count > len(env.game.get_teams_units(city_tile.team)):
-            valid_actions[:2] = True  # can only build a unit if num citits > num units
-
-        valid_actions[2] = True  # city may always research
-
-    else:
-        unit = env.last_observation_object[0]
-
-        valid_actions[:5] = True  # movement. Check for if unit is on map boarder?
-
-        # ToDo
-        #  valid_actions[5] if worker adjacent
-        #  valid_actions[6] if cart adjacent
-        valid_actions[5:7] = True
-
-        if unit.is_worker():
-            if unit.can_build(env.game.map):
-                valid_actions[7] = True
-
-            cell = env.game.map.get_cell_by_pos(unit.pos)
-            if cell.road > CONFIGS["parameters"]["MIN_ROAD"]:
-                valid_actions[8] = True
-
-    return valid_actions
-
-
-def make_env(mode="train"):
-    return ActionMasker(LuxEnvironment(
+def make_env(mode="train", model=None):
+    return LuxEnvironment(
         configs=CONFIGS,
-        learning_agent=LuxAgent(mode=mode),
+        learning_agent=LuxAgent(mode=mode, model=model),
         opponent_agent=Agent()
-    ), action_mask_fn)
+    )
 
 
 def train():
@@ -94,7 +57,7 @@ def train():
             save_freq=SAVE_FREQ,
             save_path=CHECKPOINT_PATH,
             name_prefix=TIME_STAMP,
-            replay_env=make_env(mode="inference"),
+            replay_env=make_env(mode="inference", model=model),
             replay_num_episodes=5
         )
     )

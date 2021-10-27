@@ -223,3 +223,40 @@ class LuxEnvironment(gym.Env):
             is_game_error = True
 
         return is_game_error
+
+    def action_masks(self):
+        valid_actions = [False] * self.action_space.n
+
+        city_tile = self.last_observation_object[1]
+        if city_tile is not None:
+            city_count = 0
+
+            for city in self.game.cities.values():
+                if city.team == city_tile.team:
+                    city_count += 1
+
+            if city_count > len(self.game.get_teams_units(city_tile.team)):
+                valid_actions[0] = True
+                valid_actions[1] = True  # can only build a unit if num citits > num units
+
+            valid_actions[2] = True  # city may always research
+
+        else:
+            unit = self.last_observation_object[0]
+
+            for i in range(7):
+                valid_actions[i] = True  # movement. Check for if unit is on map boarder?
+
+            # ToDo
+            #  valid_actions[5] if worker adjacent
+            #  valid_actions[6] if cart adjacent
+
+            if unit.is_worker():
+                if unit.can_build(self.game.map):
+                    valid_actions[7] = True
+
+                cell = self.game.map.get_cell_by_pos(unit.pos)
+                if cell.road > self.game.configs["parameters"]["MIN_ROAD"]:
+                    valid_actions[8] = True
+
+        return valid_actions
