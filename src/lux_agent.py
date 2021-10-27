@@ -550,6 +550,15 @@ class LuxAgent(AgentWithModel):
 
         reward = 0.0
 
+        # Incentivize Research
+        if game.state["teamStats"][self.team]["researched"]["coal"] and not self.coal_is_researched:
+            self.coal_is_researched = True
+            reward += COAL_UNLOCKED
+
+        if game.state["teamStats"][self.team]["researched"]["uranium"] and not self.uranium_is_researched:
+            self.uranium_is_researched = True
+            reward += URANIUM_UNLOCKED
+
         # bigger negative reward than positive
         if city_growth < 0:
             city_growth *= NEGATIVE_CITY_MODIFIER
