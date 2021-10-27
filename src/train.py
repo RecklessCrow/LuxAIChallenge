@@ -1,7 +1,5 @@
-import numpy as np
 from stable_baselines3 import PPO
 from sb3_contrib import MaskablePPO
-from sb3_contrib.common.wrappers.action_masker import ActionMasker
 from stable_baselines3.common.callbacks import EvalCallback
 from stable_baselines3.common.env_util import make_vec_env
 

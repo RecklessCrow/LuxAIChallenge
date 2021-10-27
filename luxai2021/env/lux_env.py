@@ -4,6 +4,8 @@ Implements the base class for a Lux environment
 import traceback
 import gym
 import os
+
+from luxai2021.game.position import Position
 from stable_baselines3.common.callbacks import BaseCallback
 
 from ..game.game import Game
@@ -244,19 +246,19 @@ class LuxEnvironment(gym.Env):
         else:
             unit = self.last_observation_object[0]
 
-            # for i in range(7):
-            #     valid_actions[i] = True  # movement. Check for if unit is on map boarder?
-
             valid_actions[0] = True
 
-            unit_up    = [unit.pos.x, unit.pos.y + 1]
-            unit_down  = [unit.pos.x, unit.pos.y - 1]
-            unit_left  = [unit.pos.x + 1, unit.pos.y]
-            unit_right = [unit.pos.x - 1, unit.pos.y]
+            unit_up    = Position(unit.pos.x, unit.pos.y + 1)
+            unit_down  = Position(unit.pos.x, unit.pos.y - 1)
+            unit_left  = Position(unit.pos.x + 1, unit.pos.y)
+            unit_right = Position(unit.pos.x - 1, unit.pos.y)
 
             nearby = [unit_up, unit_down, unit_left, unit_right]
             for idx, near in enumerate(nearby):
                 cell = self.game.map.get_cell_by_pos(near)
+
+                if cell is None:
+                    continue
 
                 if cell.city_tile is not None:
                     valid_actions[idx + 1] = True
