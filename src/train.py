@@ -8,10 +8,10 @@ from luxai2021.env.agent import Agent
 from luxai2021.env.lux_env import LuxEnvironment, SaveReplayAndModelCallback
 
 
-def make_env():
+def make_env(model=None):
     return LuxEnvironment(
         configs=CONFIGS,
-        learning_agent=LuxAgent(),
+        learning_agent=LuxAgent(model=model),
         opponent_agent=LuxAgent(mode="inference", model=PPO.load(SAVED_MODEL_PATH))
     )
 
@@ -68,7 +68,7 @@ def train():
     # for metrics.
     if NUM_ENVS > 1:
         # An evaluation environment is needed to measure multi-env setups. Use a fixed 4 envs.
-        eval_env = make_vec_env(make_env, NUM_EVAL_ENVS)
+        eval_env = make_vec_env(lambda: make_env(model=model), NUM_EVAL_ENVS)
 
         callbacks.append(
             EvalCallback(
