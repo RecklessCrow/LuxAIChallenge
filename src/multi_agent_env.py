@@ -1,10 +1,9 @@
-import numpy as np
 from pettingzoo import AECEnv
+from pettingzoo.utils import agent_selector
 
 from constants import *
 from luxai2021.game.game import Game
 from luxai2021.game.match_controller import MatchController, GameStepFailedException
-from pettingzoo.utils import agent_selector
 
 
 class MultiAgentLuxEnv(AECEnv):
