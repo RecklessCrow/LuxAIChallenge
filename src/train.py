@@ -1,5 +1,4 @@
 from stable_baselines3 import PPO
-from sb3_contrib import MaskablePPO
 from stable_baselines3.common.callbacks import EvalCallback
 from stable_baselines3.common.env_util import make_vec_env
 
@@ -63,7 +62,11 @@ def train():
             save_freq=SAVE_FREQ,
             save_path=CHECKPOINT_PATH,
             name_prefix=TIME_STAMP,
-            replay_env=make_env(mode="inference", model=model),
+            replay_env=LuxEnvironment(
+                configs=CONFIGS,
+                learning_agent=LuxAgent(mode="inference", model=model),
+                opponent_agent=Agent()
+            ),
             replay_num_episodes=5
         )
     )

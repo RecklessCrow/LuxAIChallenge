@@ -97,7 +97,6 @@ class LuxAgent(AgentWithModel):
             partial(MoveAction, direction=Constants.DIRECTIONS.EAST),
             partial(MoveAction, direction=Constants.DIRECTIONS.WEST),
 
-
             partial(smart_transfer_to_nearby, target_type_restriction=Constants.UNIT_TYPES.CART),
             partial(smart_transfer_to_nearby, target_type_restriction=Constants.UNIT_TYPES.WORKER),
 
@@ -491,7 +490,7 @@ class LuxAgent(AgentWithModel):
             else:
                 city_count_opponent += 1
 
-            for cell in city.city_cells:
+            for _ in city.city_cells:
                 if city.team == self.team:
                     city_tile_count += 1
                 else:
@@ -526,7 +525,6 @@ class LuxAgent(AgentWithModel):
         research_completed = game.state["teamStates"][self.team]["researchPoints"]
         research_growth = research_completed - self.old_research
         self.old_research = research_completed
-
 
         """
         End of game
