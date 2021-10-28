@@ -555,7 +555,7 @@ class LuxAgent(AgentWithModel):
             self.uranium_is_researched = True
             reward += URANIUM_UNLOCKED
 
-        if research_completed > NUM_RESEARCH_FOR_COAL:
+        if self.coal_is_researched:
             research_growth *= RESEARCH_GOAL_MET_MODIFIER
 
         reward += research_growth * RESEARCH_REWARD_MODIFIER
@@ -564,6 +564,7 @@ class LuxAgent(AgentWithModel):
             # City / Unit rewards
             if count > 0:
                 decayed_reward = (np.e ** (np.abs(growth) / count)) - 1
+                decayed_reward = np.clip(decayed_reward, MIN_REWARD, MAX_REWARD)
                 return decayed_reward if growth >= 0 else -decayed_reward
 
             elif growth != 0:  # Lost all units this turn
