@@ -75,7 +75,7 @@ def train():
     # for metrics.
     if NUM_ENVS > 1:
         # An evaluation environment is needed to measure multi-env setups. Use a fixed 4 envs.
-        eval_env = make_vec_env(make_env, NUM_EVAL_ENVS)
+        eval_env = make_vec_env(lambda: make_env(model=model), NUM_EVAL_ENVS)
 
         callbacks.append(
             EvalCallback(

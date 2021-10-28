@@ -120,8 +120,8 @@ class LuxAgent(AgentWithModel):
         self.observation = np.zeros(OBSERVATION_SHAPE[0])
 
     def game_start(self, game):
-        self.last_unit_count = 0
-        self.last_city_tile_count = 0
+        self.last_unit_count = STARTING_UNITS
+        self.last_city_tile_count = STARTING_CITIES
         self.last_fuel_deposited = 0
 
         self.coal_is_researched = False
@@ -454,9 +454,10 @@ class LuxAgent(AgentWithModel):
         """
 
         """
-        Before Game
-            [-] Game error
+        Prior checks
+            [] Game error
             [] Game not start or end
+            [] Game Over
         """
 
         if not is_new_turn and not game_over:
@@ -466,7 +467,15 @@ class LuxAgent(AgentWithModel):
         if game_errored:
             # Game environment step failed, assign a game lost reward to not incentivise this behaviour
             print("Game failed due to error")
-            return -1.0
+            return MIN_REWARD
+
+        if game_over:
+            self.is_last_turn = True
+
+            if game.get_winning_team() == self.team:
+                return GAME_WIN
+            else:
+                return GAME_LOSS
 
         """
         During Game
@@ -537,7 +546,7 @@ class LuxAgent(AgentWithModel):
 
         reward = 0.0
 
-        # Incentivize Research
+        # Research rewards
         if game.state["teamStates"][self.team]["researched"]["coal"] and not self.coal_is_researched:
             self.coal_is_researched = True
             reward += COAL_UNLOCKED
@@ -546,33 +555,32 @@ class LuxAgent(AgentWithModel):
             self.uranium_is_researched = True
             reward += URANIUM_UNLOCKED
 
-        # bigger negative reward than positive
-        if unit_growth < 0:
-            unit_growth *= NEGATIVE_UNIT_MODIFIER
+        if research_completed > NUM_RESEARCH_FOR_COAL:
+            research_growth *= RESEARCH_GOAL_MET_MODIFIER
 
-        for i in range(int(city_growth)):
-            base_city_reward = ((MAX_CITY_COUNT - (city_tile_count - i)) / MAX_CITY_COUNT - 5) * CITY_REWARD_MODIFIER
-            reward += base_city_reward if city_growth > 0 else base_city_reward * NEGATIVE_CITY_MODIFIER
+        reward += research_growth * RESEARCH_REWARD_MODIFIER
 
-        for i in range(int(unit_growth)):
-            base_unit_reward = ((MAX_UNIT_COUNT - (unit_count - i)) / MAX_UNIT_COUNT - 5) * UNIT_REWARD_MODIFIER
-            reward += base_unit_reward if unit_growth > 0 else base_unit_reward * NEGATIVE_UNIT_MODIFIER
+        def calc_unit_reward(growth, count):
+            # City / Unit rewards
+            if count > 0:
+                decayed_reward = (np.e ** (growth / count)) - 1
+                return decayed_reward if growth >= 0 else -decayed_reward
 
+            elif growth != 0:  # Lost all units this turn
+                return MIN_REWARD
+
+            return 0
+
+        reward += calc_unit_reward(city_growth, city_tile_count)  # city reward
+        reward += calc_unit_reward(unit_growth, unit_count)  # unit reward
+
+        # Resource rewards
         reward += fuel_deposited_growth * FUEL_DEPOSITED_REWARD_MODIFIER
         reward += wood_gathered * WOOD_GATHERED_REWARD_MODIFIER
         reward += coal_gathered * COAL_GATHERED_REWARD_MODIFIER
         reward += uranium_gathered * URANIUM_GATHERED_REWARD_MODIFIER
 
-        if research_completed > 50:
-            research_growth *= .20
-
-        reward += research_growth * RESEARCH_REWARD_MODIFIER
-
-        if game_over:
-            self.is_last_turn = True
-            reward += city_tile_count * CITY_STANDING_REWARD_MODIFIER
-
-        return reward
+        return np.clip(reward, MIN_REWARD, MAX_REWARD)
 
     def take_action(self, action_code, game, unit=None, city_tile=None, team=None):
         """
