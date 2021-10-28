@@ -523,6 +523,10 @@ class LuxAgent(AgentWithModel):
         uranium_gathered = resources_collected['uranium'] - self.last_uranium
         self.last_uranium = resources_collected['uranium']
 
+        research_completed = game.state["teamStates"][self.team]["researchPoints"]
+        research_growth = research_completed - self.old_research
+        self.old_research = research_completed
+
 
         """
         End of game
@@ -532,15 +536,6 @@ class LuxAgent(AgentWithModel):
                 # ally units - # enemy units
         
         """
-
-        lead_amount = 0
-        if game_over:
-            self.is_last_turn = True
-
-            lead_amount = city_tile_count - city_count_opponent
-
-            if lead_amount == 0:
-                lead_amount = unit_count - unit_count_opponent
 
         reward = 0.0
 
@@ -554,21 +549,30 @@ class LuxAgent(AgentWithModel):
             reward += URANIUM_UNLOCKED
 
         # bigger negative reward than positive
-        if city_growth < 0:
-            city_growth *= NEGATIVE_CITY_MODIFIER
-
-        # bigger negative reward than positive
         if unit_growth < 0:
             unit_growth *= NEGATIVE_UNIT_MODIFIER
 
-        reward += city_growth * CITY_REWARD_MODIFIER
-        reward += unit_growth * UNIT_REWARD_MODIFIER
+        for i in range(int(city_growth)):
+            base_city_reward = ((MAX_CITY_COUNT - (city_tile_count - i)) / MAX_CITY_COUNT - 5) * CITY_REWARD_MODIFIER
+            reward += base_city_reward if city_growth > 0 else base_city_reward * NEGATIVE_CITY_MODIFIER
+
+        for i in range(int(unit_growth)):
+            base_unit_reward = ((MAX_UNIT_COUNT - (unit_count - i)) / MAX_UNIT_COUNT - 5) * UNIT_REWARD_MODIFIER
+            reward += base_unit_reward if unit_growth > 0 else base_unit_reward * NEGATIVE_UNIT_MODIFIER
 
         reward += fuel_deposited_growth * FUEL_DEPOSITED_REWARD_MODIFIER
         reward += wood_gathered * WOOD_GATHERED_REWARD_MODIFIER
         reward += coal_gathered * COAL_GATHERED_REWARD_MODIFIER
         reward += uranium_gathered * URANIUM_GATHERED_REWARD_MODIFIER
-        reward += lead_amount * LEAD_REWARD_MODIFIER
+
+        if research_completed > 50:
+            research_growth *= .20
+
+        reward += research_growth * RESEARCH_REWARD_MODIFIER
+
+        if game_over:
+            self.is_last_turn = True
+            reward += city_tile_count * CITY_STANDING_REWARD_MODIFIER
 
         return reward
 

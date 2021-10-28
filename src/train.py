@@ -10,11 +10,18 @@ from luxai2021.env.lux_env import LuxEnvironment, SaveReplayAndModelCallback
 
 
 def make_env(mode="train", model=None):
-    return LuxEnvironment(
-        configs=CONFIGS,
-        learning_agent=LuxAgent(mode=mode),
-        opponent_agent=Agent()
-    )
+    if mode == "train":
+        return LuxEnvironment(
+            configs=CONFIGS,
+            learning_agent=LuxAgent(),
+            opponent_agent=Agent()
+        )
+    else:
+        return LuxEnvironment(
+            configs=CONFIGS,
+            learning_agent=LuxAgent(mode="inference", model=model),
+            opponent_agent=Agent()
+        )
 
 
 def train():
@@ -30,26 +37,12 @@ def train():
     # Create Environment
 
     if NUM_ENVS > 1:
-        dummy_env = make_vec_env(
-            lambda: LuxEnvironment(
-                configs=CONFIGS,
-                learning_agent=LuxAgent(),
-                opponent_agent=Agent(),
-            ), NUM_ENVS)
-    else:
-        LuxEnvironment(
-            configs=CONFIGS,
-            learning_agent=LuxAgent(),
-            opponent_agent=Agent(),
-        )
-
-    if NUM_ENVS > 1:
         train_env = make_vec_env(make_env, NUM_ENVS)
     else:
         train_env = make_env()
 
     # Create Model
-    model = MaskablePPO(
+    model = PPO(
         "MlpPolicy",
         train_env,
         verbose=1,
@@ -79,7 +72,7 @@ def train():
     # for metrics.
     if NUM_ENVS > 1:
         # An evaluation environment is needed to measure multi-env setups. Use a fixed 4 envs.
-        eval_env = make_vec_env(lambda: make_env(model, mode="inference"), NUM_EVAL_ENVS)
+        eval_env = make_vec_env(make_env, NUM_EVAL_ENVS)
 
         callbacks.append(
             EvalCallback(
