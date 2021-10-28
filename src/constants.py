@@ -37,7 +37,7 @@ GAME_WIN = 1
 GAME_LOSS = -GAME_WIN
 
 # Hyper Parameters
-LEARNING_RATE = 0.0001
+LEARNING_RATE = 0.001
 GAMMA = 0.995
 GAE_LAMBDA = 0.95
 BATCH_SIZE = 4096
@@ -45,9 +45,9 @@ TRAINING_STEPS = 10_000_000
 NUM_STEPS = BATCH_SIZE
 
 # Multiprocessing
-NUM_EVAL_ENVS = 4  # enables multiprocessing
-NUM_EVAL_GAMES = 30
-NUM_ENVS = 60
+NUM_EVAL_ENVS = 1  # enables multiprocessing
+NUM_EVAL_GAMES = 5
+NUM_ENVS = 1
 
 # Logging
 NUM_REPLAYS = 10

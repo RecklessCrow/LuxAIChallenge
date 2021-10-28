@@ -12,8 +12,8 @@ from luxai2021.env.lux_env import LuxEnvironment, SaveReplayAndModelCallback
 def make_env(mode="train", model=None):
     return LuxEnvironment(
         configs=CONFIGS,
-        learning_agent=LuxAgent(mode=mode, model=model),
-        opponent_agent=LuxAgent(mode='inference', model=model)
+        learning_agent=LuxAgent(mode=mode),
+        opponent_agent=Agent()
     )
 
 
@@ -25,6 +25,7 @@ def train():
 
     # Create agents
     # trained_model = PPO.load(SAVED_MODEL_PATH)
+    model = None
 
     # Create Environment
 
@@ -45,7 +46,7 @@ def train():
     if NUM_ENVS > 1:
         train_env = make_vec_env(make_env, NUM_ENVS)
     else:
-        train_env = make_env(model)
+        train_env = make_env()
 
     # Create Model
     model = MaskablePPO(
