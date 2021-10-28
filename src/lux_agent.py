@@ -563,7 +563,7 @@ class LuxAgent(AgentWithModel):
         def calc_unit_reward(growth, count):
             # City / Unit rewards
             if count > 0:
-                decayed_reward = (np.e ** (growth / count)) - 1
+                decayed_reward = (np.e ** (np.abs(growth) / count)) - 1
                 return decayed_reward if growth >= 0 else -decayed_reward
 
             elif growth != 0:  # Lost all units this turn
