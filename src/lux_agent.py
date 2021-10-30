@@ -1,88 +1,172 @@
 from functools import partial
 
-import numpy as np
 from gym import spaces
 
 from constants import *
 from luxai2021.env.agent import AgentWithModel
 from luxai2021.game.actions import *
+from luxai2021.game.city import CityTile
 from luxai2021.game.constants import Constants
 from luxai2021.game.game import Game
-from luxai2021.game.game_constants import GAME_CONSTANTS
+from luxai2021.game.unit import Worker
 
 
-def smart_transfer_to_nearby(game, team, unit_id, unit, target_type_restriction=None, **kwarg):
-    """
-    Smart-transfers from the specified unit to a nearby neighbor. Prioritizes any
-    nearby carts first, then any worker. Transfers the resource type which the unit
-    has most of. Picks which cart/worker based on choosing a target that is most-full
-    but able to take the most amount of resources.
-    Args:
-        team ([type]): [description]
-        unit_id ([type]): [description]
-    Returns:
-        Action: Returns a TransferAction object, even if the request is an invalid
-                transfer. Use TransferAction.is_valid() to check validity.
-    """
+def calc_distance(x1, y1, x2, y2):
+    a = abs(x2 - x1)
+    b = abs(y2 - y1)
+    return a + b
 
-    # Calculate how much resources could at-most be transferred
-    resource_type = None
-    resource_amount = 0
-    target_unit = None
 
-    if unit is not None:
-        for type, amount in unit.cargo.items():
-            if amount > resource_amount:
-                resource_type = type
-                resource_amount = amount
+def get_cargo(game, unit, unit_type):
+    if unit_type == "city":
+        c = game.cities[unit.city_id]
+        return min(c.fuel / (c.get_light_upkeep() * 200.0), 1.0)
+    elif unit_type in RESOURCE_LIST:
+        return min(unit.resource.amount / 500, 1.0)
+    else:
+        return min(unit.get_cargo_space_left() / 100, 1.0)
 
-        # Find the best nearby unit to transfer to
-        unit_cell = game.map.get_cell_by_pos(unit.pos)
-        adjacent_cells = game.map.get_adjacent_cells(unit_cell)
 
-        for c in adjacent_cells:
-            for id, u in c.units.items():
-                # Apply the unit type target restriction
-                if target_type_restriction is None or u.type == target_type_restriction:
-                    if u.team == team:
-                        # This unit belongs to our team, set it as the winning transfer target
-                        # if it's the best match.
-                        if target_unit is None:
-                            target_unit = u
-                        else:
-                            # Compare this unit to the existing target
-                            if target_unit.type == u.type:
-                                # Transfer to the target with the least capacity, but can accept
-                                # all of our resources
-                                if (u.get_cargo_space_left() >= resource_amount and
-                                        target_unit.get_cargo_space_left() >= resource_amount):
-                                    # Both units can accept all our resources. Prioritize one that is most-full.
-                                    if u.get_cargo_space_left() < target_unit.get_cargo_space_left():
-                                        # This new target it better, it has less space left and can take all our
-                                        # resources
-                                        target_unit = u
+def get_game_state_vec(game, team):
+    game_state_vec = np.zeros(len(GAME_STATE_CATEGORIES))
 
-                                elif target_unit.get_cargo_space_left() >= resource_amount:
-                                    # Don't change targets. Current one is best since it can take all
-                                    # the resources, but new target can't.
-                                    pass
+    # Is Night
+    game_state_vec[GAME_STATE_IDX_DICT['is_night']] = game.is_night()
 
-                                elif u.get_cargo_space_left() > target_unit.get_cargo_space_left():
-                                    # Change targets, because neither target can accept all our resources and
-                                    # this target can take more resources.
-                                    target_unit = u
-                            elif u.type == Constants.UNIT_TYPES.CART:
-                                # Transfer to this cart instead of the current worker target
-                                target_unit = u
+    # Percent of day/night cycle complete
+    steps = NUM_STEPS_IN_NIGHT if game.is_night() else NUM_STEPS_IN_DAY
+    game_state_vec[GAME_STATE_IDX_DICT['%_of_cycle_passed']] = (game.state['turn'] % steps) / steps
 
-    # Build the transfer action request
-    target_unit_id = None
-    if target_unit is not None:
-        target_unit_id = target_unit.id
+    # Percent of game done
+    game_state_vec[GAME_STATE_IDX_DICT['%_of_cycle_passed']] = game.state["turn"] / MAX_DAYS
 
-        # Update the transfer amount based on the room of the target
-        if target_unit.get_cargo_space_left() < resource_amount:
-            resource_amount = target_unit.get_cargo_space_left()
+    # worker cap reached
+    game_state_vec[GAME_STATE_IDX_DICT["worker_cap_reached"]] = game.worker_unit_cap_reached(team)
+
+    # Research
+    research = game.state["teamStates"][team]["researchPoints"]
+    idx = GAME_STATE_IDX_DICT['coal_research_progress']
+    game_state_vec[idx] = min(research / RESERACH_FOR_COAL, 1)
+    idx = GAME_STATE_IDX_DICT['uranium_research_progress']
+    game_state_vec[idx] = min(research / MAX_RESEARCH, 1)
+
+    return game_state_vec
+
+
+def get_unit_vec(game, unit):
+    vec = np.zeros(UNIT_LEN)
+
+    # Unit type, inventory, and position
+    if isinstance(unit, CityTile):
+        unit_type = 'city'
+    elif isinstance(unit, Worker):
+        unit_type = 'worker'
+    else:
+        unit_type = 'cart'
+
+    x, y = unit.pos.x, unit.pos.y
+
+    vec[UNIT_IDX_DICT[unit_type]] = 1
+    vec[UNIT_IDX_DICT['inventory']] = get_cargo(game, unit, unit_type)
+    vec[UNIT_IDX_DICT['team']] = unit.team
+    vec[UNIT_IDX_DICT['x']] = x / game.map.width
+    vec[UNIT_IDX_DICT['y']] = y / game.map.height
+
+    return vec
+
+
+def get_team_unit_vec(game, units, controlled_unit_vec):
+    vec_list = np.zeros((len(units), UNIT_LEN))
+
+    for idx, unit in enumerate(units):
+        vec_list[idx] = get_unit_vec(game, unit)
+
+    vec_list = sorted(
+        vec_list,
+        key=lambda vec: calc_distance(
+            controlled_unit_vec[UNIT_IDX_DICT['x']],
+            controlled_unit_vec[UNIT_IDX_DICT['y']],
+            vec[UNIT_IDX_DICT['x']],
+            vec[UNIT_IDX_DICT['y']]
+        )
+    )
+
+    vec_list = np.array(vec_list[:NUM_OBSERVATIONS])
+
+    if len(vec_list) == 0:
+        vec_list = np.ones((NUM_OBSERVATIONS, UNIT_LEN)) * -1
+    elif len(vec_list) < NUM_OBSERVATIONS:
+        vec_list = np.concatenate((vec_list, np.ones((NUM_OBSERVATIONS - len(vec_list), UNIT_LEN)) * -1))
+
+    return vec_list.flatten()
+
+
+def get_team_city_vec(game, cities, controlled_unit_vec):
+    vec_list = np.zeros((len(cities), UNIT_LEN))
+    for idx, city in enumerate(cities):
+        cell = min(
+            city.city_cells,
+            key=lambda vec: calc_distance(
+                controlled_unit_vec[UNIT_IDX_DICT['x']],
+                controlled_unit_vec[UNIT_IDX_DICT['y']],
+                vec.pos.x / game.map.width,
+                vec.pos.y / game.map.width
+            )
+        )
+
+        vec_list[idx] = get_unit_vec(game, cell.city_tile)
+
+    vec_list = sorted(
+        vec_list,
+        key=lambda vec: calc_distance(
+            controlled_unit_vec[UNIT_IDX_DICT['x']],
+            controlled_unit_vec[UNIT_IDX_DICT['y']],
+            vec[UNIT_IDX_DICT['x']],
+            vec[UNIT_IDX_DICT['y']]
+        )
+    )
+
+    vec_list = np.array(vec_list[:NUM_OBSERVATIONS])
+
+    if len(vec_list) == 0:
+        vec_list = np.ones((NUM_OBSERVATIONS, UNIT_LEN)) * -1
+    elif len(vec_list) < NUM_OBSERVATIONS:
+        vec_list = np.concatenate((vec_list, np.ones((NUM_OBSERVATIONS - len(vec_list), UNIT_LEN)) * -1))
+
+    return vec_list.flatten()
+
+
+def get_resource_vec(game, controlled_unit_vec):
+    resource_list = np.zeros((len(game.map.resources), RESOURCE_LEN))
+
+    for idx, cell in enumerate(game.map.resources):
+        resource_vec = np.zeros(RESOURCE_LEN)
+
+        resource_vec[RESOURCE_IDX_DICT[cell.resource.type]] = 1
+        resource_vec[RESOURCE_IDX_DICT['amount']] = get_cargo(game, cell, cell.resource.type)
+        resource_vec[RESOURCE_IDX_DICT['x']] = cell.pos.x / game.map.width
+        resource_vec[RESOURCE_IDX_DICT['y']] = cell.pos.y / game.map.height
+
+        resource_list[idx] = resource_vec
+
+    resource_list = sorted(
+        resource_list,
+        key=lambda vec: calc_distance(
+            controlled_unit_vec[UNIT_IDX_DICT['x']],
+            controlled_unit_vec[UNIT_IDX_DICT['y']],
+            vec[RESOURCE_IDX_DICT['x']],
+            vec[RESOURCE_IDX_DICT['y']]
+        )
+    )
+
+    vec_list = np.array(resource_list[:NUM_RESOURCE_OBSERVATIONS])
+
+    if len(vec_list) == 0:
+        vec_list = np.ones((NUM_RESOURCE_OBSERVATIONS, RESOURCE_LEN)) * -1
+    elif len(vec_list) < NUM_RESOURCE_OBSERVATIONS:
+        vec_list = np.concatenate((vec_list, np.ones((NUM_RESOURCE_OBSERVATIONS - len(vec_list), RESOURCE_LEN)) * -1))
+
+    return vec_list.flatten()
 
 
 class LuxAgent(AgentWithModel):
@@ -114,7 +198,7 @@ class LuxAgent(AgentWithModel):
 
         # Initialize observations
         self.observation_shape = OBSERVATION_SHAPE
-        self.observation_space = spaces.Box(low=0, high=1, shape=self.observation_shape, dtype=np.float16)
+        self.observation_space = spaces.Box(low=-1, high=1, shape=self.observation_shape, dtype=np.float16)
 
         self.object_nodes = {}
         self.observation = np.zeros(OBSERVATION_SHAPE[0])
@@ -134,312 +218,49 @@ class LuxAgent(AgentWithModel):
         self.total_amount_wood = 0
         for cell in game.map.resources:
             if cell.resource.type == Constants.RESOURCE_TYPES.WOOD:
-                self.total_amount_wood += self.get_cargo(game, cell, Constants.RESOURCE_TYPES.WOOD)
+                self.total_amount_wood += get_cargo(game, cell, Constants.RESOURCE_TYPES.WOOD)
 
-    def get_map_contents(self, game, my_team):
-        # Build a list of object nodes by type for quick distance-searches
-        self.object_nodes = {}
-
-        self.amount_wood_left = 0
-        # Add resources
-        for cell in game.map.resources:
-            if cell.resource.type not in self.object_nodes:
-                self.object_nodes[cell.resource.type] = []
-            self.object_nodes[cell.resource.type].append(cell)
-
-            if cell.resource.type == Constants.RESOURCE_TYPES.WOOD:
-                self.amount_wood_left += self.get_cargo(game, cell, Constants.RESOURCE_TYPES.WOOD)
-
-        # Add your own and opponent units
-        for team in [my_team, (my_team + 1) % 2]:
-            # todo check logic
-            for unit in game.state["teamStates"][my_team]["units"].values():
-                key = str(unit.type)
-                if team != my_team:
-                    key = str(unit.type) + "_opponent"
-
-                if key not in self.object_nodes:
-                    self.object_nodes[key] = []
-                self.object_nodes[key].append(unit)
-
-        # Add your own and opponent cities
-        for city in game.cities.values():
-            for cell in city.city_cells:
-                key = "city"
-                if city.team != my_team:
-                    key += "_opponent"
-
-                if key not in self.object_nodes:
-                    self.object_nodes[key] = []
-                self.object_nodes[key].append(cell.city_tile)
-
-        # for key in self.object_nodes:
-        #     self.object_nodes[key] = np.array(self.object_nodes[key])
-
-    @staticmethod
-    def distance(unit_pos, others_pos):
-        distances = []
-        for i in range(len(others_pos)):
-            distances.append(abs(others_pos[i][0] - unit_pos[0]) + abs(others_pos[i][1] - unit_pos[1]))
-
-        return distances
-
-    @staticmethod
-    def get_cargo(game, unit, unit_type):
-        if unit_type == "city":
-            c = game.cities[unit.city_id]
-            return min(c.fuel / (c.get_light_upkeep() * 200.0), 1.0)
-        elif unit_type in RESOURCE_LIST:
-            return min(unit.resource.amount / 500, 1.0)
-        else:
-            return min(unit.get_cargo_space_left() / 100, 1.0)
-
-    @staticmethod
-    def add_vector(observation, observation_idx, unit_pos, other_pos):
-
-        x_diff = other_pos[0] - unit_pos[0]
-        y_diff = other_pos[1] - unit_pos[1]
-
-        if x_diff == 0 and y_diff == 0:
-            observation[observation_idx + 0] = 1
-        elif abs(x_diff) > abs(y_diff):
-            if x_diff > 0:
-                observation[observation_idx + 1] = 1
-            else:
-                observation[observation_idx + 2] = 1
-        else:
-            if y_diff > 0:
-                observation[observation_idx + 3] = 1
-            else:
-                observation[observation_idx + 4] = 1
+        self.avg_team_reward_dict = {self.team: [], (self.team + 1) % 2: []}
 
     def get_observation(self, game: Game, unit, city_tile, team, is_new_turn: bool):
-        """
-        Implements getting a observation from the current game for this unit or city
-        """
+        # game state [team, is_night, current_cycle_percent, game_complete_percent,
+        # coal_research_progress, uranium_research_progress, team_worker_cap_reached]
+        # controlled unit [is_city, is_worker, is_cart, inventory, abs_pos (x, y), team]
+        # closest n allied units [is_city, is_worker, is_cart, inventory, abs_pos (x, y), team]
+        # closest n enemy units [is_city, is_worker, is_cart, inventory, abs_pos (x, y), team]
+        # closest n resources [is_wood, is_coal, is_uranium, amount, abs_pos]
 
-        if is_new_turn:
-            self.get_map_contents(game, team)
+        game_state_vec = get_game_state_vec(game, team)
 
-        self.observation.fill(0)
-        observation_idx = 0
+        # Controlled unit
+        controlled_unit = unit if unit is not None else city_tile
+        controlled_unit_vec = get_unit_vec(game, unit=controlled_unit)
+        player_team = team
 
-        """
-        Features/Objects in Vector
-        
-        Turn Identifier  - 3x:
-         - 1x Worker
-         - 1x Cart
-         - 1x City
-         """
-        if unit is not None:
-            if unit.type == Constants.UNIT_TYPES.WORKER:
-                self.observation[observation_idx + 0] = 1.0  # Worker
-            else:
-                self.observation[observation_idx + 1] = 1.0  # Cart
-        if city_tile is not None:
-            self.observation[observation_idx + 2] = 1.0  # CityTile
+        # n nearest units
+        unit_vec_dict = {player_team: None, (player_team + 1) % 2: None}
+        for team in TEAMS:
+            units = game.get_teams_units(team).values()
+            team_vec = get_team_unit_vec(game, units, controlled_unit_vec)
+            unit_vec_dict[team] = team_vec
 
-        observation_idx += NUM_IDENTIFIERS
+        # n nearest cities
+        city_vec_dict = {player_team: None, (player_team + 1) % 2: None}
+        for team in TEAMS:
+            cities = [city for city in game.cities.values() if city.team == team]
+            city_vec_dict[team] = get_team_city_vec(game, cities, controlled_unit_vec)
 
-        """
-        Game State - 12x:
-         - 1x cargo size of current unit
-         - 1x percent of day state complete
-         - 1x is night
-         - 1x percent of day/night cycle complete
-         - 2x city tile counts [cur player, opponent]
-         - 2x worker counts [cur player, opponent]
-         - 2x cart counts [cur player, opponent]
-         
-         - 1x research points [cur player]
-         - 1x researched coal [cur player]
-         - 1x researched uranium [cur player]
-        """
+        # n nearest resources
+        resource_vec = get_resource_vec(game, controlled_unit_vec)
 
-        # 1x cargo size
-        if unit is not None:
-            self.observation[observation_idx] = unit.get_cargo_space_left() / \
-                                                GAME_CONSTANTS["PARAMETERS"]["RESOURCE_CAPACITY"]["WORKER"]
-        observation_idx += 1
+        obs = np.concatenate([
+            game_state_vec, controlled_unit_vec,
+            unit_vec_dict[player_team], unit_vec_dict[(player_team + 1) % 2],
+            city_vec_dict[player_team], city_vec_dict[(player_team + 1) % 2],
+            resource_vec
+        ])
 
-        # 1x percent of day/night cycle complete
-        if game.is_night():
-            self.observation[observation_idx] = (game.state['turn'] % NUM_STEPS_IN_NIGHT) / NUM_STEPS_IN_NIGHT
-        else:
-            self.observation[observation_idx] = (game.state['turn'] % NUM_STEPS_IN_DAY) / NUM_STEPS_IN_DAY
-        observation_idx += 1
-
-        # 1x is night
-        self.observation[observation_idx] = game.is_night()
-        observation_idx += 1
-
-        # 1x percent of game done
-        self.observation[observation_idx] = game.state["turn"] / GAME_CONSTANTS["PARAMETERS"]["MAX_DAYS"]
-        observation_idx += 1
-
-        # 6x unit counts
-        for key in ["city", str(Constants.UNIT_TYPES.WORKER), str(Constants.UNIT_TYPES.CART)]:
-            if key in self.object_nodes:
-                self.observation[observation_idx] = len(self.object_nodes[key]) / MAX_UNIT_COUNT
-            if (key + "_opponent") in self.object_nodes:
-                self.observation[observation_idx + 1] = len(self.object_nodes[(key + "_opponent")]) / MAX_UNIT_COUNT
-            observation_idx += 2
-
-        # 1x percent wood left
-        self.observation[observation_idx] = self.amount_wood_left / self.total_amount_wood
-        observation_idx += 1
-
-        # 1x research points
-        self.observation[observation_idx] = game.state["teamStates"][team]["researchPoints"] / MAX_RESEARCH
-        observation_idx += 1
-
-        # 1x researched coal
-        self.observation[observation_idx] = float(game.state["teamStates"][team]["researched"]["coal"])
-        observation_idx += 1
-
-        # 1x researched uranium
-        self.observation[observation_idx] = float(game.state["teamStates"][team]["researched"]["uranium"])
-        observation_idx += 1
-
-        """
-        Entity Detection - 42x:
-        
-        Nearest Cart - 4x:
-         - 2x [vector direction]
-         - 1x distance
-         - 1x amount
-         
-        Nearest Worker - 4x:
-         - 2x [vector direction]
-         - 1x distance
-         - 1x amount
-        
-        Worker with fullest inventory - 4x:
-         - 2x [vector direction]
-         - 1x distance
-         - 1x amount
-        
-        Nearest City - 4x:
-         - 2x [vector direction]
-         - 1x distance
-         - 1x amount fuel
-        
-        City with least amount of Fuel - 4x:
-         - 2x [vector direction]
-         - 1x distance
-         - 1x amount fuel
-        
-        Resources - 48x:
-        - 3x per resource 
-         - 3x for 3 nearest resource piles
-          - 2x [vector direction]
-          - 1x distance
-          - 1x amount
-         
-        """
-
-        assert observation_idx == NUM_IDENTIFIERS + NUM_GAME_STATES
-
-        if unit is not None:
-            current_position = [unit.pos.x, unit.pos.y]
-        else:
-            current_position = [city_tile.pos.x, city_tile.pos.y]
-
-        types = {
-            Constants.RESOURCE_TYPES.WOOD: 3,
-            Constants.RESOURCE_TYPES.COAL: 3,
-            Constants.RESOURCE_TYPES.URANIUM: 3,
-            "city": 1,
-            str(Constants.UNIT_TYPES.WORKER): 1,
-            str(Constants.UNIT_TYPES.CART): 1
-        }
-
-        if unit is None:
-            return self.observation
-
-        # Nearest Entity
-        for entity_type in types.keys():
-
-            if entity_type not in self.object_nodes:  # if there is none of this entity_type on board
-                observation_idx += UNIT_VECTOR_SIZE * types[entity_type]
-                continue
-
-            other_units = self.object_nodes[entity_type]
-
-            # get allied units only
-            if entity_type in [Constants.UNIT_TYPES.WORKER, Constants.UNIT_TYPES.CART]:
-                other_units = game.get_teams_units(self.team)
-            elif entity_type == "city":
-                other_units = [city_tile for city_tile in other_units if city_tile.team == team]
-
-            # get positions
-            other_unit_positions = [[unit.pos.x, unit.pos.y] for unit in other_units]
-
-            # sort by least distance
-            distances = self.distance(current_position, other_unit_positions)
-            sorted_idx = np.argsort(distances)
-
-            # remove self
-            if unit is not None and unit.type == entity_type:
-                sorted_idx = np.delete(sorted_idx, 0)
-            elif city_tile is not None and entity_type == "city":
-                sorted_idx = np.delete(sorted_idx, 0)
-
-            for n in range(types[entity_type]):  # n-nearest
-                if n >= sorted_idx.size:  # n-nearest does not exist
-                    observation_idx += UNIT_VECTOR_SIZE
-                    continue
-
-                other_position = other_unit_positions[sorted_idx[n]]
-                self.add_vector(self.observation, observation_idx, current_position, other_position)
-
-                distance = distances[sorted_idx[n]]
-                distance /= game.map.width + game.map.height
-                self.observation[observation_idx + (UNIT_VECTOR_SIZE - 2)] = distance
-
-                # 1x amount
-                cargo_amount = self.get_cargo(game, other_units[sorted_idx[n]], entity_type)
-                self.observation[observation_idx + (UNIT_VECTOR_SIZE - 1)] = cargo_amount
-                observation_idx += UNIT_VECTOR_SIZE
-
-        # ToDo Worker with fullest inventory (remove self)
-        units = game.get_teams_units(self.team).values()
-
-        if units:
-            max_unit = max(units, key=lambda x: self.get_cargo(game, x, x.type))
-
-            if max_unit != unit:
-                other_pos = [max_unit.pos.x, max_unit.pos.y]
-                self.add_vector(self.observation, observation_idx, current_position, other_pos)
-
-                distance = abs(other_pos[0] - current_position[0]) + abs(other_pos[1] - current_position[1])
-                distance /= game.map.width + game.map.height
-                self.observation[observation_idx + (UNIT_VECTOR_SIZE - 2)] = distance
-
-                # 1x amount
-                cargo_amount = self.get_cargo(game, max_unit, max_unit.type)
-                self.observation[observation_idx + (UNIT_VECTOR_SIZE - 1)] = cargo_amount
-
-        observation_idx += UNIT_VECTOR_SIZE
-
-        if "city" in self.object_nodes:
-            starving_city_tile = min(self.object_nodes["city"], key=lambda x: self.get_cargo(game, x, "city"))
-            starving_city_tile_position = [starving_city_tile.pos.x, starving_city_tile.pos.y]
-
-            distance = abs(starving_city_tile_position[0] - current_position[0]) + abs(
-                starving_city_tile_position[1] - current_position[1])
-            distance /= game.map.width + game.map.height
-            self.observation[observation_idx + (UNIT_VECTOR_SIZE - 2)] = distance
-
-            self.add_vector(self.observation, observation_idx, current_position, starving_city_tile_position)
-            cargo_amount = self.get_cargo(game, starving_city_tile, "city")
-            self.observation[observation_idx + (UNIT_VECTOR_SIZE - 1)] = cargo_amount
-
-        observation_idx += UNIT_VECTOR_SIZE
-        assert observation_idx == OBSERVATION_SHAPE[0]
-
-        return self.observation
+        return obs
 
     def get_reward(self, game, game_over: bool, is_new_turn: bool, game_errored: bool) -> float:
         """
@@ -558,7 +379,7 @@ class LuxAgent(AgentWithModel):
         if self.coal_is_researched:
             research_growth *= RESEARCH_GOAL_MET_MODIFIER
 
-        reward += research_growth * RESEARCH_REWARD_MODIFIER
+        # reward += research_growth * RESEARCH_REWARD_MODIFIER * city_tile_count
 
         def calc_unit_reward(growth, count):
             # City / Unit rewards
@@ -580,6 +401,10 @@ class LuxAgent(AgentWithModel):
         reward += wood_gathered * WOOD_GATHERED_REWARD_MODIFIER
         reward += coal_gathered * COAL_GATHERED_REWARD_MODIFIER
         reward += uranium_gathered * URANIUM_GATHERED_REWARD_MODIFIER
+
+        # subtract the avg enemy team's reward to prevent positive sum situations
+        # self.avg_team_reward_dict[self.team].append(reward)
+        # reward -= np.mean(self.avg_team_reward_dict[(self.team + 1) % 2])
 
         return np.clip(reward, MIN_REWARD, MAX_REWARD)
 

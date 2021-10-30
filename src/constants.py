@@ -1,24 +1,42 @@
 import os
 from datetime import datetime
 
+import numpy as np
+
 from luxai2021.game.constants import Constants, LuxMatchConfigs_Default
+from luxai2021.game.game_constants import GAME_CONSTANTS
 
 CONFIGS = LuxMatchConfigs_Default
 
-# Observation Vector Sizes
-NUM_IDENTIFIERS = 3
-NUM_GAME_STATES = 14
-UNIT_VECTOR_SIZE = 7
-NUM_RESOURCES = (5 * UNIT_VECTOR_SIZE) + (3 * 3 * UNIT_VECTOR_SIZE)
-OBSERVATION_SHAPE = (NUM_IDENTIFIERS + NUM_GAME_STATES + NUM_RESOURCES,)
 RESOURCE_LIST = [Constants.RESOURCE_TYPES.WOOD, Constants.RESOURCE_TYPES.COAL, Constants.RESOURCE_TYPES.URANIUM]
 
+MAX_DAYS = GAME_CONSTANTS["PARAMETERS"]["MAX_DAYS"]
+
+NUM_OBSERVATIONS = 5
+NUM_RESOURCE_OBSERVATIONS = 10
+
+GAME_STATE_CATEGORIES = ['is_night', '%_of_cycle_passed', '%_game_complete', 'coal_research_progress', 'uranium_research_progress', 'worker_cap_reached', 'team']
+GAME_STATE_LEN = len(GAME_STATE_CATEGORIES)
+GAME_STATE_IDX_DICT = dict(zip(GAME_STATE_CATEGORIES, np.arange(0, len(GAME_STATE_CATEGORIES))))
+
+UNIT_CATEGORIES = ['team', 'city', 'worker', 'cart', 'inventory', 'x', 'y']
+UNIT_LEN = len(UNIT_CATEGORIES)
+UNIT_IDX_DICT = dict(zip(UNIT_CATEGORIES, np.arange(0, len(UNIT_CATEGORIES))))
+
+RESOURCE_CATEGORIES = ['wood', 'coal', 'uranium', 'amount', 'x', 'y']
+RESOURCE_LEN = len(RESOURCE_CATEGORIES)
+RESOURCE_IDX_DICT = dict(zip(RESOURCE_CATEGORIES, np.arange(0, RESOURCE_LEN)))
+
+OBSERVATION_SHAPE = (len(GAME_STATE_CATEGORIES) + (len(UNIT_CATEGORIES) * (NUM_OBSERVATIONS * 4 + 1)) + (len(RESOURCE_CATEGORIES) * NUM_RESOURCE_OBSERVATIONS), )
+
 # Observation Constants
-MAX_RESEARCH = 200.0
+RESERACH_FOR_COAL = 50
+MAX_RESEARCH = 200
 MAX_UNIT_COUNT = 30
 MAX_CITY_COUNT = 30
 STARTING_CITIES = 1
 STARTING_UNITS = 1
+TEAMS = [0, 1]
 
 NUM_STEPS_IN_DAY = 30
 NUM_STEPS_IN_NIGHT = 10
@@ -32,13 +50,13 @@ WOOD_GATHERED_REWARD_MODIFIER = 0.0001
 COAL_GATHERED_REWARD_MODIFIER = WOOD_GATHERED_REWARD_MODIFIER * 10
 URANIUM_GATHERED_REWARD_MODIFIER = WOOD_GATHERED_REWARD_MODIFIER * 40
 
-RESEARCH_REWARD_MODIFIER = 0.1
+RESEARCH_REWARD_MODIFIER = 0.00001
 RESEARCH_GOAL_MET_MODIFIER = 0.1
 COAL_UNLOCKED = MAX_REWARD
 URANIUM_UNLOCKED = MAX_REWARD
 
 GAME_WIN = MAX_REWARD
-GAME_LOSS = MIN_REWARD
+GAME_LOSS = -GAME_WIN
 
 # Unused
 # CITY_REWARD_MODIFIER = 0.5
@@ -48,7 +66,7 @@ GAME_LOSS = MIN_REWARD
 # CITY_STANDING_REWARD_MODIFIER = CITY_REWARD_MODIFIER * 2
 
 # Hyper Parameters
-LEARNING_RATE = 0.0001
+LEARNING_RATE = 3e-4
 GAMMA = 0.995
 GAE_LAMBDA = 0.95
 BATCH_SIZE = 4096
@@ -58,7 +76,7 @@ NUM_STEPS = BATCH_SIZE
 # Multiprocessing
 NUM_EVAL_ENVS = 4
 NUM_EVAL_GAMES = 5
-NUM_ENVS = os.cpu_count()
+NUM_ENVS = 1  # os.cpu_count()
 
 # Logging
 NUM_REPLAYS = 10
@@ -67,6 +85,7 @@ SAVE_FREQ = (TRAINING_STEPS // NUM_REPLAYS) // NUM_ENVS
 TIME_STAMP = datetime.now().strftime('%m-%d_%H-%M-%S')
 
 CHECKPOINT_PATH = os.path.join("..", "checkpoints")
+MODEL_PATH = os.path.join("..", 'models')
 if not os.path.exists(CHECKPOINT_PATH):
     os.mkdir(CHECKPOINT_PATH)
 
@@ -75,4 +94,5 @@ CALLBACKS_PATH = os.path.join(LOGS_PATH, f"{TIME_STAMP}")
 
 MODEL_CHECKPOINT_PATH = os.path.join(CHECKPOINT_PATH, TIME_STAMP)
 MODEL_PATH = os.path.join("..", "models", f"{TIME_STAMP}.zip")
-SAVED_MODEL_PATH = os.path.join("..", "checkpoints", "10-28_12-22-27_step2000000.zip")
+
+SAVED_MODEL_PATH = os.path.join(MODEL_PATH, ".zip")

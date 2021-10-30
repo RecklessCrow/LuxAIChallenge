@@ -1,18 +1,25 @@
+import torch
 from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import EvalCallback
 from stable_baselines3.common.env_util import make_vec_env
 
 from constants import *
+from custom_policy import linear_schedule
 from lux_agent import LuxAgent
 from luxai2021.env.agent import Agent
 from luxai2021.env.lux_env import LuxEnvironment, SaveReplayAndModelCallback
 
 
 def make_env(model=None):
+    if os.path.exists(SAVED_MODEL_PATH):
+        opponent_agent = LuxAgent(mode="inference", model=PPO.load(SAVED_MODEL_PATH))
+    else:
+        opponent_agent = LuxAgent(model=model)
+
     return LuxEnvironment(
         configs=CONFIGS,
         learning_agent=LuxAgent(model=model),
-        opponent_agent=LuxAgent(mode="inference", model=PPO.load(SAVED_MODEL_PATH))
+        opponent_agent=opponent_agent
     )
 
 
@@ -33,17 +40,24 @@ def train():
     else:
         train_env = make_env()
 
+    policy_kwargs = dict(
+        activation_fn=torch.nn.GELU,
+        # net_arch=[dict(pi=[256, 256, 256], vf=[256, 256, 256])],
+        # optimizer_class=torch.optim.RAdam
+    )
+
     # Create Model
     model = PPO(
         "MlpPolicy",
         train_env,
         verbose=1,
         tensorboard_log=LOGS_PATH,
-        learning_rate=LEARNING_RATE,
+        learning_rate=linear_schedule(LEARNING_RATE),
         gamma=GAMMA,
         gae_lambda=GAE_LAMBDA,
         batch_size=BATCH_SIZE,
         n_steps=NUM_STEPS,
+        policy_kwargs=policy_kwargs
     )
 
     # Create callbacks for logging
