@@ -150,6 +150,10 @@ class LuxEnvironment(gym.Env):
         try:
             (unit, city_tile, team, is_new_turn) = next(self.match_generator)
 
+            while city_tile is not None:
+                self.learning_agent.handle_city_actions(self.game, city_tile)
+                (unit, city_tile, team, is_new_turn) = next(self.match_generator)
+
             obs = self.learning_agent.get_observation(self.game, unit, city_tile, team, is_new_turn)
             self.last_observation_object = (unit, city_tile, team, is_new_turn)
         except StopIteration:
