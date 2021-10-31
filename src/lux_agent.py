@@ -12,10 +12,46 @@ from luxai2021.game.game import Game
 from luxai2021.game.unit import Worker
 
 
+def get_pos(game, unit):
+    x = unit.pos.x / game.map.width
+    y = unit.pos.y / game.map.width
+
+    return x, y
+
+
 def calc_distance(x1, y1, x2, y2):
     a = abs(x2 - x1)
     b = abs(y2 - y1)
     return a + b
+
+
+def get_direction_vec(x1, y1, x2, y2):
+    direction_vec = np.zeros(5)
+    x_diff = x2 - x1
+    y_diff = y2 - y1
+
+    if x_diff == 0 and y_diff == 0:
+        direction_vec[0] = 1
+        return direction_vec
+
+    if x_diff > 0:
+        direction_vec[1] = 1
+    else:
+        direction_vec[2] = 1
+
+    if y_diff > 0:
+        direction_vec[3] = 1
+    else:
+        direction_vec[4] = 1
+
+    return direction_vec
+
+
+def format_array(array, desired_size):
+    if len(array) < NUM_OBSERVATIONS:
+        array = np.concatenate((array, np.zeros((NUM_OBSERVATIONS - len(array), desired_size))))
+
+    return array.flatten()
 
 
 def get_cargo(game, unit, unit_type):
@@ -44,17 +80,38 @@ def get_game_state_vec(game, team):
     # worker cap reached
     game_state_vec[GAME_STATE_IDX_DICT["worker_cap_reached"]] = game.worker_unit_cap_reached(team)
 
+    game_state_vec[GAME_STATE_IDX_DICT["workers_self"]] = len(game.state["teamStates"][team]["units"]) / MAX_WORKERS
+    game_state_vec[GAME_STATE_IDX_DICT["workers_opponent"]] = len(game.state["teamStates"][(team + 1) % 2]) / MAX_WORKERS
+
+    city_count = 0
+    city_tile_count = 0
+    city_count_opponent = 0
+    city_tile_count_opponent = 0
+    for city in game.cities.values():
+        if city.team == team:
+            city_count += 1
+            city_tile_count += len(city.city_cells)
+        else:
+            city_count_opponent += 1
+            city_tile_count_opponent += len(city.city_cells)
+
+    game_state_vec[GAME_STATE_IDX_DICT["cities_self"]] = city_tile_count / MAX_CITIES
+    game_state_vec[GAME_STATE_IDX_DICT["cities_opponent"]] = city_tile_count_opponent / MAX_CITIES
+
     # Research
-    research = game.state["teamStates"][team]["researchPoints"]
-    idx = GAME_STATE_IDX_DICT['coal_research_progress']
-    game_state_vec[idx] = min(research / RESERACH_FOR_COAL, 1)
-    idx = GAME_STATE_IDX_DICT['uranium_research_progress']
-    game_state_vec[idx] = min(research / MAX_RESEARCH, 1)
+    idx = GAME_STATE_IDX_DICT['research_points']
+    game_state_vec[idx] = min(game.state["teamStates"][team]["researchPoints"] / MAX_RESEARCH, 1)
+
+    idx = GAME_STATE_IDX_DICT['coal_is_researched']
+    game_state_vec[idx] = game.state["teamStates"][team]['researched']['coal']
+
+    idx = GAME_STATE_IDX_DICT['uranium_is_researched']
+    game_state_vec[idx] = game.state["teamStates"][team]['researched']['uranium']
 
     return game_state_vec
 
 
-def get_unit_vec(game, unit):
+def get_unit_vec(game, unit, controlled_unit_vec):
     vec = np.zeros(UNIT_LEN)
 
     # Unit type, inventory, and position
@@ -65,22 +122,31 @@ def get_unit_vec(game, unit):
     else:
         unit_type = 'cart'
 
-    x, y = unit.pos.x, unit.pos.y
+    x1, y1 = get_pos(game, unit)
+    if controlled_unit_vec is not None:
+        x2, y2 = controlled_unit_vec[UNIT_IDX_DICT['x']], controlled_unit_vec[UNIT_IDX_DICT['y']]
+    else:
+        x2, y2 = 0, 0
 
     vec[UNIT_IDX_DICT[unit_type]] = 1
     vec[UNIT_IDX_DICT['inventory']] = get_cargo(game, unit, unit_type)
     vec[UNIT_IDX_DICT['team']] = unit.team
-    vec[UNIT_IDX_DICT['x']] = x / game.map.width
-    vec[UNIT_IDX_DICT['y']] = y / game.map.height
+    vec[UNIT_IDX_DICT['x']] = x1
+    vec[UNIT_IDX_DICT['y']] = y1
+    vec[UNIT_IDX_DICT['angle_to_controlled']] = np.arctan2(y2 - y1, x2 - x1) / (2 * np.pi)
+    vec[UNIT_IDX_DICT['dist_to_controlled']] = calc_distance(x1, y1, x2, y2)
 
     return vec
 
 
 def get_team_unit_vec(game, units, controlled_unit_vec):
+    if len(units) == 0:
+        return np.zeros((NUM_OBSERVATIONS, UNIT_LEN)).flatten()
+
     vec_list = np.zeros((len(units), UNIT_LEN))
 
     for idx, unit in enumerate(units):
-        vec_list[idx] = get_unit_vec(game, unit)
+        vec_list[idx] = get_unit_vec(game, unit, controlled_unit_vec)
 
     vec_list = sorted(
         vec_list,
@@ -92,17 +158,21 @@ def get_team_unit_vec(game, units, controlled_unit_vec):
         )
     )
 
+    # Remove self from array of closest units
+    for idx, vec in enumerate(vec_list):  # just in case units are stacked
+        if np.array_equal(vec, controlled_unit_vec):
+            vec_list = np.delete(vec_list, idx, axis=0)
+            break
+
     vec_list = np.array(vec_list[:NUM_OBSERVATIONS])
 
-    if len(vec_list) == 0:
-        vec_list = np.ones((NUM_OBSERVATIONS, UNIT_LEN)) * -1
-    elif len(vec_list) < NUM_OBSERVATIONS:
-        vec_list = np.concatenate((vec_list, np.ones((NUM_OBSERVATIONS - len(vec_list), UNIT_LEN)) * -1))
-
-    return vec_list.flatten()
+    return format_array(vec_list, UNIT_LEN)
 
 
 def get_team_city_vec(game, cities, controlled_unit_vec):
+    if len(cities) == 0:
+        return np.zeros((NUM_OBSERVATIONS, UNIT_LEN)).flatten()
+
     vec_list = np.zeros((len(cities), UNIT_LEN))
     for idx, city in enumerate(cities):
         cell = min(
@@ -115,7 +185,7 @@ def get_team_city_vec(game, cities, controlled_unit_vec):
             )
         )
 
-        vec_list[idx] = get_unit_vec(game, cell.city_tile)
+        vec_list[idx] = get_unit_vec(game, cell.city_tile, controlled_unit_vec)
 
     vec_list = sorted(
         vec_list,
@@ -129,24 +199,27 @@ def get_team_city_vec(game, cities, controlled_unit_vec):
 
     vec_list = np.array(vec_list[:NUM_OBSERVATIONS])
 
-    if len(vec_list) == 0:
-        vec_list = np.ones((NUM_OBSERVATIONS, UNIT_LEN)) * -1
-    elif len(vec_list) < NUM_OBSERVATIONS:
-        vec_list = np.concatenate((vec_list, np.ones((NUM_OBSERVATIONS - len(vec_list), UNIT_LEN)) * -1))
-
-    return vec_list.flatten()
+    return format_array(vec_list, UNIT_LEN)
 
 
 def get_resource_vec(game, controlled_unit_vec):
+    if len(game.map.resources) == 0:
+        return np.zeros((NUM_RESOURCE_OBSERVATIONS, RESOURCE_LEN)).flatten()
+
     resource_list = np.zeros((len(game.map.resources), RESOURCE_LEN))
 
     for idx, cell in enumerate(game.map.resources):
         resource_vec = np.zeros(RESOURCE_LEN)
 
+        x1, y1 = get_pos(game, cell)
+        x2, y2 = controlled_unit_vec[UNIT_IDX_DICT['x']], controlled_unit_vec[UNIT_IDX_DICT['y']]
+
         resource_vec[RESOURCE_IDX_DICT[cell.resource.type]] = 1
         resource_vec[RESOURCE_IDX_DICT['amount']] = get_cargo(game, cell, cell.resource.type)
-        resource_vec[RESOURCE_IDX_DICT['x']] = cell.pos.x / game.map.width
-        resource_vec[RESOURCE_IDX_DICT['y']] = cell.pos.y / game.map.height
+        resource_vec[RESOURCE_IDX_DICT['x']] = x1
+        resource_vec[RESOURCE_IDX_DICT['y']] = y1
+        resource_vec[RESOURCE_IDX_DICT['angle_to_controlled']] = np.arctan2(y2 - y1, x2 - x1) / (2 * np.pi)
+        resource_vec[RESOURCE_IDX_DICT['dist_to_controlled']] = calc_distance(x1, y1, x2, y2)
 
         resource_list[idx] = resource_vec
 
@@ -163,7 +236,7 @@ def get_resource_vec(game, controlled_unit_vec):
     vec_list = np.array(resource_list[:NUM_RESOURCE_OBSERVATIONS])
 
     if len(vec_list) == 0:
-        vec_list = np.ones((NUM_RESOURCE_OBSERVATIONS, RESOURCE_LEN)) * -1
+        vec_list = np.zeros((NUM_RESOURCE_OBSERVATIONS, RESOURCE_LEN))
     elif len(vec_list) < NUM_RESOURCE_OBSERVATIONS:
         vec_list = np.concatenate((vec_list, np.ones((NUM_RESOURCE_OBSERVATIONS - len(vec_list), RESOURCE_LEN)) * -1))
 
@@ -196,22 +269,21 @@ class LuxAgent(AgentWithModel):
 
     def game_start(self, game):
         self.last_unit_count = STARTING_UNITS
+        self.last_unit_count_opponent = STARTING_UNITS
+        
         self.last_city_tile_count = STARTING_CITIES
-        self.last_fuel_deposited = 0
+        self.last_city_tile_count_opponent = STARTING_CITIES
 
         self.coal_is_researched = False
         self.uranium_is_researched = False
-        self.last_wood = 0
-        self.last_coal = 0
-        self.last_uranium = 0
-        self.old_research = 0
 
-        self.total_amount_wood = 0
-        for cell in game.map.resources:
-            if cell.resource.type == Constants.RESOURCE_TYPES.WOOD:
-                self.total_amount_wood += get_cargo(game, cell, Constants.RESOURCE_TYPES.WOOD)
+        self.opponent_rewards = []
 
-        self.avg_team_reward_dict = {self.team: [], (self.team + 1) % 2: []}
+        starting_resource_dict = {'fuel_deposited': 0, 'last_wood': 0, 'last_coal': 0, 'last_uranium': 0}
+        self.last_resource_dict = {
+            self.team: starting_resource_dict.copy(),
+            (self.team + 1) % 2: starting_resource_dict.copy()
+        }
 
     def get_observation(self, game: Game, unit, city_tile, team, is_new_turn: bool):
         # game state [team, is_night, current_cycle_percent, game_complete_percent,
@@ -225,7 +297,7 @@ class LuxAgent(AgentWithModel):
 
         # Controlled unit
         controlled_unit = unit if unit is not None else city_tile
-        controlled_unit_vec = get_unit_vec(game, unit=controlled_unit)
+        controlled_unit_vec = get_unit_vec(game, unit=controlled_unit, controlled_unit_vec=None)
         player_team = team
 
         # n nearest units
@@ -245,13 +317,75 @@ class LuxAgent(AgentWithModel):
         resource_vec = get_resource_vec(game, controlled_unit_vec)
 
         obs = np.concatenate([
-            game_state_vec, controlled_unit_vec,
+            game_state_vec,
+            controlled_unit_vec,
             unit_vec_dict[player_team], unit_vec_dict[(player_team + 1) % 2],
             city_vec_dict[player_team], city_vec_dict[(player_team + 1) % 2],
             resource_vec
         ])
 
         return obs
+    
+    def calculate_unit_reward(self, game):
+        reward = 0
+
+        # Number of cities spawned or destroyed
+        city_count = 0
+        city_tile_count = 0
+        for city in game.cities.values():
+            if city.team == self.team:
+                city_count += 1
+                city_tile_count += len(city.city_cells)
+
+        city_growth = city_tile_count - self.last_city_tile_count
+        self.last_city_tile_count = city_tile_count
+        # city reward
+        reward += city_growth * CITY_MADE
+
+        # Number of units spawned or destroyed
+        # unit_count = len(game.state["teamStates"][self.team]["units"])
+        # unit_growth = unit_count - self.last_unit_count
+        # self.last_unit_count = unit_count
+        # Unit reward
+        # reward += unit_growth * UNIT_MADE
+
+        return reward
+    
+    def calculate_resource_reward(self, game):
+        reward = 0
+        opponent_reward = 0
+        
+        for team in TEAMS:
+            # Amount of fuel deposited
+            fuel_deposited = game.stats["teamStats"][team]["fuelGenerated"]
+            fuel_deposited_growth = fuel_deposited - self.last_resource_dict[team]['fuel_deposited']
+            self.last_resource_dict[team]['fuel_deposited'] = fuel_deposited
+    
+            # Amount of resource gathered
+            resources_collected = game.stats["teamStats"][team]["resourcesCollected"]
+    
+            wood_gathered = resources_collected['wood'] - self.last_resource_dict[team]['last_wood']
+            self.last_resource_dict[team]['last_wood'] = resources_collected['wood']
+    
+            coal_gathered = resources_collected['coal'] - self.last_resource_dict[team]['last_coal']
+            self.last_resource_dict[team]['last_coal'] = resources_collected['coal']
+    
+            uranium_gathered = resources_collected['uranium'] - self.last_resource_dict[team]['last_uranium']
+            self.last_resource_dict[team]['last_uranium'] = resources_collected['uranium']
+        
+            # Resource rewards
+            team_reward = 0
+            team_reward += fuel_deposited_growth * FUEL_DEPOSITED_REWARD_MODIFIER
+            team_reward += wood_gathered * WOOD_GATHERED_REWARD_MODIFIER
+            team_reward += coal_gathered * COAL_GATHERED_REWARD_MODIFIER
+            team_reward += uranium_gathered * URANIUM_GATHERED_REWARD_MODIFIER
+            
+            if team == self.team:
+                reward = team_reward
+            else:
+                opponent_reward = team_reward
+        
+        return reward, opponent_reward
 
     def get_reward(self, game, game_over: bool, is_new_turn: bool, game_errored: bool) -> float:
         """
@@ -265,13 +399,6 @@ class LuxAgent(AgentWithModel):
         :return: reward for this time step
         """
 
-        """
-        Prior checks
-            [] Game error
-            [] Game not start or end
-            [] Game Over
-        """
-
         if not is_new_turn and not game_over:
             # Only apply rewards at the start of each turn or at game end
             return 0.0
@@ -279,125 +406,33 @@ class LuxAgent(AgentWithModel):
         if game_errored:
             # Game environment step failed, assign a game lost reward to not incentivise this behaviour
             print("Game failed due to error")
-            return MIN_REWARD
+            return -GAME_WIN
 
         if game_over:
             self.is_last_turn = True
 
             if game.get_winning_team() == self.team:
                 return GAME_WIN
-            else:
-                return GAME_LOSS
-
-        """
-        During Game
-            [+] city spawned
-            [-] city destroyed
-            
-            [+] unit spawned
-            [-] unit destroyed
-            
-            [+] fuel collected
-        """
-
-        # Number of cities spawned or destroyed
-        city_count = 0
-        city_count_opponent = 0
-        city_tile_count = 0
-        city_tile_count_opponent = 0
-        for city in game.cities.values():
-            if city.team == self.team:
-                city_count += 1
-            else:
-                city_count_opponent += 1
-
-            for _ in city.city_cells:
-                if city.team == self.team:
-                    city_tile_count += 1
-                else:
-                    city_tile_count_opponent += 1
-
-        city_growth = city_tile_count - self.last_city_tile_count
-        self.last_city_tile_count = city_tile_count
-
-        # Number of units spawned or destroyed
-        unit_count = len(game.state["teamStates"][self.team]["units"])
-        unit_count_opponent = len(game.state["teamStates"][(self.team + 1) % 2]["units"])
-        unit_growth = unit_count - self.last_unit_count
-        self.last_unit_count = unit_count
-
-        # Amount of fuel deposited
-        fuel_deposited = game.stats["teamStats"][self.team]["fuelGenerated"]
-        fuel_deposited_growth = fuel_deposited - self.last_fuel_deposited
-        self.last_fuel_deposited = fuel_deposited
-
-        # Amount of resource gathered
-        resources_collected = game.stats["teamStats"][self.team]["resourcesCollected"]
-
-        wood_gathered = resources_collected['wood'] - self.last_wood
-        self.last_wood = resources_collected['wood']
-
-        coal_gathered = resources_collected['coal'] - self.last_coal
-        self.last_coal = resources_collected['coal']
-
-        uranium_gathered = resources_collected['uranium'] - self.last_uranium
-        self.last_uranium = resources_collected['uranium']
-
-        research_completed = game.state["teamStates"][self.team]["researchPoints"]
-        research_growth = research_completed - self.old_research
-        self.old_research = research_completed
-
-        """
-        End of game
-            [] # ally cities - # enemy cities standing
-            
-            if above == 0
-                # ally units - # enemy units
-        
-        """
 
         reward = 0.0
+
+        unit_reward = self.calculate_unit_reward(game)
+        fuel_reward, fuel_reward_opponent = self.calculate_resource_reward(game)
 
         # Research rewards
         if game.state["teamStates"][self.team]["researched"]["coal"] and not self.coal_is_researched:
             self.coal_is_researched = True
-            reward += COAL_UNLOCKED
+            reward += COAL_UNLOCKED * (game.state["turn"] / MAX_DAYS)
 
         if game.state["teamStates"][self.team]["researched"]["uranium"] and not self.uranium_is_researched:
             self.uranium_is_researched = True
-            reward += URANIUM_UNLOCKED
+            reward += URANIUM_UNLOCKED * (game.state["turn"] / MAX_DAYS)
 
-        if self.coal_is_researched:
-            research_growth *= RESEARCH_GOAL_MET_MODIFIER
+        self.opponent_rewards.append(fuel_reward_opponent)
+        reward += unit_reward + fuel_reward
+        reward -= np.mean(self.opponent_rewards)
 
-        # reward += research_growth * RESEARCH_REWARD_MODIFIER * city_tile_count
-
-        def calc_unit_reward(growth, count):
-            # City / Unit rewards
-            if count > 0:
-                decayed_reward = (np.e ** (np.abs(growth) / count)) - 1
-                decayed_reward = np.clip(decayed_reward, MIN_REWARD, MAX_REWARD)
-                return decayed_reward if growth >= 0 else -decayed_reward
-
-            elif growth != 0:  # Lost all units this turn
-                return MIN_REWARD
-
-            return 0
-
-        reward += calc_unit_reward(city_growth, city_tile_count)  # city reward
-        reward += calc_unit_reward(unit_growth, unit_count)  # unit reward
-
-        # Resource rewards
-        reward += fuel_deposited_growth * FUEL_DEPOSITED_REWARD_MODIFIER
-        reward += wood_gathered * WOOD_GATHERED_REWARD_MODIFIER
-        reward += coal_gathered * COAL_GATHERED_REWARD_MODIFIER
-        reward += uranium_gathered * URANIUM_GATHERED_REWARD_MODIFIER
-
-        # subtract the avg enemy team's reward to prevent positive sum situations
-        # self.avg_team_reward_dict[self.team].append(reward)
-        # reward -= np.mean(self.avg_team_reward_dict[(self.team + 1) % 2])
-
-        return np.clip(reward, MIN_REWARD, MAX_REWARD)
+        return reward
 
     def take_action(self, action_code, game, unit=None, city_tile=None, team=None):
         """

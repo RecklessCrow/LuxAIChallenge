@@ -14,7 +14,7 @@ def make_env(model=None):
     if os.path.exists(SAVED_MODEL_PATH):
         opponent_agent = LuxAgent(mode="inference", model=PPO.load(SAVED_MODEL_PATH))
     else:
-        opponent_agent = LuxAgent(model=model)
+        opponent_agent = Agent()
 
     return LuxEnvironment(
         configs=CONFIGS,
@@ -81,6 +81,7 @@ def train():
     # Since reward metrics don't work for multi-environment setups, we add an evaluation logger
     # for metrics.
     if NUM_ENVS > 1:
+        # ToDo: Evaluate against last checkpoint?
         # An evaluation environment is needed to measure multi-env setups. Use a fixed 4 envs.
         eval_env = make_vec_env(lambda: make_env(model=model), NUM_EVAL_ENVS)
 
@@ -154,3 +155,13 @@ def evaluate(model=None):
     env.close()
     print("Done")
     '''
+
+
+def test_model_logs():
+    model = PPO.load(SAVED_MODEL_PATH)
+    env = LuxEnvironment(CONFIGS, LuxAgent(model=model), LuxAgent(model=model))
+    env.run_no_learn()
+
+
+if __name__ == '__main__':
+    test_model_logs()

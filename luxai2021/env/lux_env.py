@@ -93,8 +93,8 @@ class LuxEnvironment(gym.Env):
         self.game = Game(configs)
         self.match_controller = MatchController(
             self.game,
-                                                agents=[learning_agent, opponent_agent],
-                                                replay_validate=replay_validate
+            agents=[learning_agent, opponent_agent],
+            replay_validate=replay_validate
         )
 
         self.replay_prefix = replay_prefix
@@ -109,6 +109,7 @@ class LuxEnvironment(gym.Env):
             self.observation_space = learning_agent.observation_space
 
         self.learning_agent = learning_agent
+        self.opponent_agent = opponent_agent
 
         self.current_step = 0
         self.match_generator = None
@@ -254,9 +255,9 @@ class LuxEnvironment(gym.Env):
 
             valid_actions[0] = True
 
-            unit_up    = Position(unit.pos.x, unit.pos.y + 1)
-            unit_down  = Position(unit.pos.x, unit.pos.y - 1)
-            unit_left  = Position(unit.pos.x + 1, unit.pos.y)
+            unit_up = Position(unit.pos.x, unit.pos.y + 1)
+            unit_down = Position(unit.pos.x, unit.pos.y - 1)
+            unit_left = Position(unit.pos.x + 1, unit.pos.y)
             unit_right = Position(unit.pos.x - 1, unit.pos.y)
 
             nearby = [unit_up, unit_down, unit_left, unit_right]
