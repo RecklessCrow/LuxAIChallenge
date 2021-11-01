@@ -20,8 +20,8 @@ def get_pos(game, unit):
 
 
 def calc_distance(x1, y1, x2, y2):
-    a = abs(x2 - x1)
-    b = abs(y2 - y1)
+    a = np.abs(x2 - x1)
+    b = np.abs(y2 - y1)
     return a + b
 
 
