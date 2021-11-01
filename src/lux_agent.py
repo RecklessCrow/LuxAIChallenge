@@ -399,9 +399,9 @@ class LuxAgent(AgentWithModel):
         :return: reward for this time step
         """
 
-        if not is_new_turn and not game_over:
-            # Only apply rewards at the start of each turn or at game end
-            return 0.0
+        # if not is_new_turn and not game_over:
+        #     # Only apply rewards at the start of each turn or at game end
+        #     return 0.0
 
         if game_errored:
             # Game environment step failed, assign a game lost reward to not incentivise this behaviour
@@ -518,14 +518,7 @@ class LuxAgent(AgentWithModel):
                 for cell in city.city_cells:
                     city_tile = cell.city_tile
                     if city_tile.can_act():
-                        obs = self.get_observation(game, None, city_tile, city.team, new_turn)
-                        # IMPORTANT: You can change deterministic=True to disable randomness in model inference. Generally,
-                        # I've found the agents get stuck sometimes if they are fully deterministic.
-                        action_code, _states = self.model.predict(obs, deterministic=False)
-                        if action_code is not None:
-                            actions.append(
-                                self.action_code_to_action(action_code, game=game, unit=None, city_tile=city_tile,
-                                                           team=city.team))
+                        self.handle_city_actions(game, city_tile)
                         new_turn = False
 
         time_taken = time.time() - start_time
@@ -557,4 +550,3 @@ class LuxAgent(AgentWithModel):
                 x=city_tile.pos.x,
                 y=city_tile.pos.y
             ))
-
