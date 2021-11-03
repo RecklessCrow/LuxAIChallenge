@@ -6,7 +6,7 @@ import gym
 import os
 
 from luxai2021.game.position import Position
-from stable_baselines3.common.callbacks import BaseCallback
+from stable_baselines.common.callbacks import BaseCallback
 
 from ..game.game import Game
 from ..game.match_controller import GameStepFailedException, MatchController
@@ -53,6 +53,7 @@ class SaveReplayAndModelCallback(BaseCallback):
 
             # Run a bunch of games to creates replays using the replay environment
             for i in range(self.replay_num_episodes):
+                print("RUNNING CALLBACK GAMES")
                 self.replay_env.game.configs["seed"] = i
                 self.replay_env.set_replay_path(self.save_path, f"{self.name_prefix}_step{self.num_timesteps}_seed{i}")
 
@@ -160,11 +161,11 @@ class LuxEnvironment(gym.Env):
         except StopIteration:
             # The game episode is done.
             is_game_over = True
-            obs = None
+            obs = []
         except GameStepFailedException:
             # Game step failed, assign a game lost reward to not incentivise this
             is_game_over = True
-            obs = None
+            obs = []
             is_game_error = True
 
         # Calculate reward for this step

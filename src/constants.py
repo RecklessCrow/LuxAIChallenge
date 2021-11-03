@@ -67,7 +67,7 @@ NUM_STEPS = BATCH_SIZE
 # Multiprocessing
 NUM_EVAL_ENVS = 4
 NUM_EVAL_GAMES = 32
-NUM_ENVS = 1
+NUM_ENVS = 2
 
 # Logging
 NUM_REPLAYS = 10

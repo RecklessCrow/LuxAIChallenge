@@ -18,7 +18,7 @@ def main_maker():
 
     for model_path in glob(os.path.join("models", "*.zip")):
         with open(os.path.join("model_drivers", f"{model_path.split(os.sep)[-1][:-3]}py"), 'w+') as f:
-            f.write("from sb3_contrib import MaskablePPO\n")
+            f.write("from stablebase import MaskablePPO\n")
             f.write("import os\n")
             f.write("model = MaskablePPO.load(os.path.join(\"..\", \"models\", \"{0}\"))\n".format(model_path.split(os.sep)[-1]))
             f.write(open(os.path.join("base_main.py")).read())

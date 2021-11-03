@@ -2,6 +2,7 @@ import time
 from functools import partial
 
 from gym import spaces
+from gym.spaces import flatten_space, flatten
 
 from constants import *
 from luxai2021.env.agent import AgentWithModel
@@ -238,6 +239,10 @@ class LuxAgent(AgentWithModel):
             "closest_resources": spaces.Box(low=0, high=1, shape=(NUM_RESOURCE_OBSERVATIONS, RESOURCE_LEN))
         })
 
+        self.observation_space = flatten_space(self.observation_space)
+
+        print(self.observation_space)
+
     def game_start(self, game):
         self.last_unit_count = STARTING_UNITS
         self.last_unit_count_opponent = STARTING_UNITS
@@ -282,7 +287,11 @@ class LuxAgent(AgentWithModel):
         # n nearest resources
         obs_dict["closest_resources"] = get_resource_vec(game, controlled_unit)
 
-        return obs_dict
+        obs = np.concatenate([np.array(elem).flatten() for elem in list(obs_dict.values())])
+
+        # print(obs)
+
+        return obs
     
     def calculate_unit_reward(self, game):
         reward = 0
