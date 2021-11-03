@@ -6,29 +6,36 @@ from gym import spaces
 from constants import *
 from luxai2021.env.agent import AgentWithModel
 from luxai2021.game.actions import *
-from luxai2021.game.city import CityTile
-from luxai2021.game.constants import Constants
+from luxai2021.game.city import CityTile, City
 from luxai2021.game.game import Game
-from luxai2021.game.unit import Worker
+from luxai2021.game.unit import Worker, Cart
 
 
-def get_pos(game, unit):
+def get_scaled_pos(game, unit):
+    """
+    Scales position to be between 0 and 1 based on the game map size
+    :param game:
+    :param unit:
+    :return:
+    """
+
     x = unit.pos.x / game.map.width
     y = unit.pos.y / game.map.width
 
     return x, y
 
 
-def calc_distance(x1, y1, x2, y2):
-    a = np.abs(x2 - x1)
-    b = np.abs(y2 - y1)
-    return a + b
+def get_direction_vec(unit_a, unit_b):
+    """
+    Returns a one hot encoded vector of the direction from a to b
+    :param unit_a: a unit or city_tile
+    :param unit_b: a unit or city_tile
+    :return: direction vector
+    """
 
-
-def get_direction_vec(x1, y1, x2, y2):
     direction_vec = np.zeros(5)
-    x_diff = x2 - x1
-    y_diff = y2 - y1
+    x_diff = unit_b.pos.x - unit_a.pos.x
+    y_diff = unit_b.pos.y - unit_a.pos.y
 
     if x_diff == 0 and y_diff == 0:
         direction_vec[0] = 1
@@ -48,20 +55,28 @@ def get_direction_vec(x1, y1, x2, y2):
 
 
 def format_array(array, desired_size):
-    if len(array) < NUM_OBSERVATIONS:
-        array = np.concatenate((array, np.zeros((NUM_OBSERVATIONS - len(array), desired_size))))
+    """
+    Padds array with zero to desired_size
+    :param array:
+    :param desired_size:
+    :return:
+    """
+    if len(array) < NUM_UNIT_OBSERVATIONS:
+        array = np.concatenate((array, np.zeros((NUM_UNIT_OBSERVATIONS - len(array), desired_size))))
 
-    return array.flatten()
+    return array
 
 
-def get_cargo(game, unit, unit_type):
-    if unit_type == "city":
+def get_cargo(game, unit):
+    if isinstance(unit, CityTile):
         c = game.cities[unit.city_id]
         return min(c.fuel / (c.get_light_upkeep() * 200.0), 1.0)
-    elif unit_type in RESOURCE_LIST:
-        return min(unit.resource.amount / 500, 1.0)
-    else:
+
+    elif isinstance(unit, (Worker, Cart)):
         return min(unit.get_cargo_space_left() / 100, 1.0)
+
+    else:
+        return min(unit.amount / 500, 1.0)
 
 
 def get_game_state_vec(game, team):
@@ -111,7 +126,7 @@ def get_game_state_vec(game, team):
     return game_state_vec
 
 
-def get_unit_vec(game, unit, controlled_unit_vec):
+def get_unit_vec(game, unit, controlled_unit):
     vec = np.zeros(UNIT_LEN)
 
     # Unit type, inventory, and position
@@ -122,125 +137,77 @@ def get_unit_vec(game, unit, controlled_unit_vec):
     else:
         unit_type = 'cart'
 
-    x1, y1 = get_pos(game, unit)
-    if controlled_unit_vec is not None:
-        x2, y2 = controlled_unit_vec[UNIT_IDX_DICT['x']], controlled_unit_vec[UNIT_IDX_DICT['y']]
-    else:
-        x2, y2 = 0, 0
+    x, y = get_scaled_pos(game, unit)
 
     vec[UNIT_IDX_DICT[unit_type]] = 1
-    vec[UNIT_IDX_DICT['inventory']] = get_cargo(game, unit, unit_type)
+    vec[UNIT_IDX_DICT['inventory']] = get_cargo(game, unit)
     vec[UNIT_IDX_DICT['team']] = unit.team
-    vec[UNIT_IDX_DICT['x']] = x1
-    vec[UNIT_IDX_DICT['y']] = y1
-    vec[UNIT_IDX_DICT['angle_to_controlled']] = np.arctan2(y2 - y1, x2 - x1) / (2 * np.pi)
-    vec[UNIT_IDX_DICT['dist_to_controlled']] = calc_distance(x1, y1, x2, y2)
+    vec[UNIT_IDX_DICT['x']] = x
+    vec[UNIT_IDX_DICT['y']] = y
+    vec[UNIT_IDX_DICT['dist_to_controlled']] = unit.pos.distance_to(controlled_unit.pos)
+    vec[UNIT_IDX_DICT['angle_to_controlled']] = 0
 
     return vec
 
 
-def get_team_unit_vec(game, units, controlled_unit_vec):
+def get_team_vec(game, units, controlled_unit):
     if len(units) == 0:
-        return np.zeros((NUM_OBSERVATIONS, UNIT_LEN)).flatten()
+        return np.zeros((NUM_UNIT_OBSERVATIONS, UNIT_LEN))
 
-    vec_list = np.zeros((len(units), UNIT_LEN))
+    team_vec = np.zeros((len(units), UNIT_LEN))
 
+    # vectorize units
     for idx, unit in enumerate(units):
-        vec_list[idx] = get_unit_vec(game, unit, controlled_unit_vec)
+        if isinstance(unit, City):  # use closest city tile to represent city
+            unit = min(
+                unit.city_cells,
+                key=lambda city_cell: city_cell.pos.distance_to(controlled_unit.pos)
+            ).city_tile
 
-    vec_list = sorted(
-        vec_list,
-        key=lambda vec: calc_distance(
-            controlled_unit_vec[UNIT_IDX_DICT['x']],
-            controlled_unit_vec[UNIT_IDX_DICT['y']],
-            vec[UNIT_IDX_DICT['x']],
-            vec[UNIT_IDX_DICT['y']]
-        )
+        team_vec[idx] = get_unit_vec(game, unit, controlled_unit)
+
+    # sort units by distance to controlled unit
+    team_vec = sorted(
+        team_vec,
+        key=lambda vec: vec[UNIT_IDX_DICT['dist_to_controlled']]
     )
 
-    # Remove self from array of closest units
-    for idx, vec in enumerate(vec_list):  # just in case units are stacked
-        if np.array_equal(vec, controlled_unit_vec):
-            vec_list = np.delete(vec_list, idx, axis=0)
-            break
+    team_vec = np.array(team_vec[:NUM_UNIT_OBSERVATIONS])
 
-    vec_list = np.array(vec_list[:NUM_OBSERVATIONS])
-
-    return format_array(vec_list, UNIT_LEN)
+    return format_array(team_vec, UNIT_LEN)
 
 
-def get_team_city_vec(game, cities, controlled_unit_vec):
-    if len(cities) == 0:
-        return np.zeros((NUM_OBSERVATIONS, UNIT_LEN)).flatten()
-
-    vec_list = np.zeros((len(cities), UNIT_LEN))
-    for idx, city in enumerate(cities):
-        cell = min(
-            city.city_cells,
-            key=lambda vec: calc_distance(
-                controlled_unit_vec[UNIT_IDX_DICT['x']],
-                controlled_unit_vec[UNIT_IDX_DICT['y']],
-                vec.pos.x / game.map.width,
-                vec.pos.y / game.map.width
-            )
-        )
-
-        vec_list[idx] = get_unit_vec(game, cell.city_tile, controlled_unit_vec)
-
-    vec_list = sorted(
-        vec_list,
-        key=lambda vec: calc_distance(
-            controlled_unit_vec[UNIT_IDX_DICT['x']],
-            controlled_unit_vec[UNIT_IDX_DICT['y']],
-            vec[UNIT_IDX_DICT['x']],
-            vec[UNIT_IDX_DICT['y']]
-        )
-    )
-
-    vec_list = np.array(vec_list[:NUM_OBSERVATIONS])
-
-    return format_array(vec_list, UNIT_LEN)
-
-
-def get_resource_vec(game, controlled_unit_vec):
+def get_resource_vec(game, controlled_unit):
     if len(game.map.resources) == 0:
-        return np.zeros((NUM_RESOURCE_OBSERVATIONS, RESOURCE_LEN)).flatten()
+        return np.zeros((NUM_RESOURCE_OBSERVATIONS, RESOURCE_LEN))
 
     resource_list = np.zeros((len(game.map.resources), RESOURCE_LEN))
 
     for idx, cell in enumerate(game.map.resources):
         resource_vec = np.zeros(RESOURCE_LEN)
 
-        x1, y1 = get_pos(game, cell)
-        x2, y2 = controlled_unit_vec[UNIT_IDX_DICT['x']], controlled_unit_vec[UNIT_IDX_DICT['y']]
+        x1, y1 = get_scaled_pos(game, cell)
 
         resource_vec[RESOURCE_IDX_DICT[cell.resource.type]] = 1
-        resource_vec[RESOURCE_IDX_DICT['amount']] = get_cargo(game, cell, cell.resource.type)
+        resource_vec[RESOURCE_IDX_DICT['amount']] = get_cargo(game, cell.resource)
         resource_vec[RESOURCE_IDX_DICT['x']] = x1
         resource_vec[RESOURCE_IDX_DICT['y']] = y1
-        resource_vec[RESOURCE_IDX_DICT['angle_to_controlled']] = np.arctan2(y2 - y1, x2 - x1) / (2 * np.pi)
-        resource_vec[RESOURCE_IDX_DICT['dist_to_controlled']] = calc_distance(x1, y1, x2, y2)
+        resource_vec[RESOURCE_IDX_DICT['dist_to_controlled']] = cell.pos.distance_to(controlled_unit.pos)
+        resource_vec[RESOURCE_IDX_DICT['angle_to_controlled']] = 0
 
         resource_list[idx] = resource_vec
 
     resource_list = sorted(
         resource_list,
-        key=lambda vec: calc_distance(
-            controlled_unit_vec[UNIT_IDX_DICT['x']],
-            controlled_unit_vec[UNIT_IDX_DICT['y']],
-            vec[RESOURCE_IDX_DICT['x']],
-            vec[RESOURCE_IDX_DICT['y']]
-        )
+        key=lambda vec: vec[RESOURCE_IDX_DICT['dist_to_controlled']]
     )
 
-    vec_list = np.array(resource_list[:NUM_RESOURCE_OBSERVATIONS])
+    resource_list = np.array(resource_list[:NUM_RESOURCE_OBSERVATIONS])
 
-    if len(vec_list) == 0:
-        vec_list = np.zeros((NUM_RESOURCE_OBSERVATIONS, RESOURCE_LEN))
-    elif len(vec_list) < NUM_RESOURCE_OBSERVATIONS:
-        vec_list = np.concatenate((vec_list, np.ones((NUM_RESOURCE_OBSERVATIONS - len(vec_list), RESOURCE_LEN)) * -1))
+    if len(resource_list) < NUM_RESOURCE_OBSERVATIONS:
+        resource_list = np.concatenate((resource_list, np.zeros((NUM_RESOURCE_OBSERVATIONS - len(resource_list), RESOURCE_LEN))))
 
-    return vec_list.flatten()
+    return resource_list
 
 
 class LuxAgent(AgentWithModel):
@@ -261,11 +228,15 @@ class LuxAgent(AgentWithModel):
         self.action_space = spaces.Discrete(len(self.unit_actions))
 
         # Initialize observations
-        self.observation_shape = OBSERVATION_SHAPE
-        self.observation_space = spaces.Box(low=-1, high=1, shape=self.observation_shape, dtype=np.float16)
-
-        self.object_nodes = {}
-        self.observation = np.zeros(OBSERVATION_SHAPE[0])
+        self.observation_space = spaces.dict.Dict({
+            "game_state": spaces.Box(low=0, high=1, shape=(GAME_STATE_LEN,)),
+            "controlled_unit_vec": spaces.Box(low=0, high=1, shape=(UNIT_LEN,)),
+            "closest_team_cities": spaces.Box(low=0, high=1, shape=(NUM_UNIT_OBSERVATIONS, UNIT_LEN)),
+            "closest_opponent_cities": spaces.Box(low=0, high=1, shape=(NUM_UNIT_OBSERVATIONS, UNIT_LEN)),
+            "closest_team_units": spaces.Box(low=0, high=1, shape=(NUM_UNIT_OBSERVATIONS, UNIT_LEN)),
+            "closest_opponent_units": spaces.Box(low=0, high=1, shape=(NUM_UNIT_OBSERVATIONS, UNIT_LEN)),
+            "closest_resources": spaces.Box(low=0, high=1, shape=(NUM_RESOURCE_OBSERVATIONS, RESOURCE_LEN))
+        })
 
     def game_start(self, game):
         self.last_unit_count = STARTING_UNITS
@@ -285,46 +256,33 @@ class LuxAgent(AgentWithModel):
             (self.team + 1) % 2: starting_resource_dict.copy()
         }
 
-    def get_observation(self, game: Game, unit, city_tile, team, is_new_turn: bool):
-        # game state [team, is_night, current_cycle_percent, game_complete_percent,
-        # coal_research_progress, uranium_research_progress, team_worker_cap_reached]
-        # controlled unit [is_city, is_worker, is_cart, inventory, abs_pos (x, y), team]
-        # closest n allied units [is_city, is_worker, is_cart, inventory, abs_pos (x, y), team]
-        # closest n enemy units [is_city, is_worker, is_cart, inventory, abs_pos (x, y), team]
-        # closest n resources [is_wood, is_coal, is_uranium, amount, abs_pos]
-
-        game_state_vec = get_game_state_vec(game, team)
+    def get_observation(self, game: Game, unit, city_tile, controlled_unit_team, is_new_turn: bool):
+        obs_dict = {"game_state": get_game_state_vec(game, controlled_unit_team)}
 
         # Controlled unit
         controlled_unit = unit if unit is not None else city_tile
-        controlled_unit_vec = get_unit_vec(game, unit=controlled_unit, controlled_unit_vec=None)
-        player_team = team
+        obs_dict["controlled_unit_vec"] = get_unit_vec(game, controlled_unit, controlled_unit)
 
-        # n nearest units
-        unit_vec_dict = {player_team: None, (player_team + 1) % 2: None}
-        for team in TEAMS:
-            units = game.get_teams_units(team).values()
-            team_vec = get_team_unit_vec(game, units, controlled_unit_vec)
-            unit_vec_dict[team] = team_vec
-
-        # n nearest cities
-        city_vec_dict = {player_team: None, (player_team + 1) % 2: None}
+        # Team observations
         for team in TEAMS:
             cities = [city for city in game.cities.values() if city.team == team]
-            city_vec_dict[team] = get_team_city_vec(game, cities, controlled_unit_vec)
+            units = list(game.get_teams_units(team).values())
+
+            if team == controlled_unit_team:
+                city_key = "closest_team_cities"
+                unit_key = "closest_team_units"
+                units.remove(controlled_unit)
+            else:
+                city_key = "closest_opponent_cities"
+                unit_key = "closest_opponent_units"
+
+            obs_dict[city_key] = get_team_vec(game, cities, controlled_unit)
+            obs_dict[unit_key] = get_team_vec(game, units, controlled_unit)
 
         # n nearest resources
-        resource_vec = get_resource_vec(game, controlled_unit_vec)
+        obs_dict["closest_resources"] = get_resource_vec(game, controlled_unit)
 
-        obs = np.concatenate([
-            game_state_vec,
-            controlled_unit_vec,
-            unit_vec_dict[player_team], unit_vec_dict[(player_team + 1) % 2],
-            city_vec_dict[player_team], city_vec_dict[(player_team + 1) % 2],
-            resource_vec
-        ])
-
-        return obs
+        return obs_dict
     
     def calculate_unit_reward(self, game):
         reward = 0
@@ -388,6 +346,8 @@ class LuxAgent(AgentWithModel):
         return reward, opponent_reward
 
     def get_reward(self, game, game_over: bool, is_new_turn: bool, game_errored: bool) -> float:
+        # prio early game getting wood and building cities
+
         """
         Returns the reward function for this step of the game. Reward should be a
         delta increment to the reward, not the total current reward.
