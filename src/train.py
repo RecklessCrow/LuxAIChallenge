@@ -1,4 +1,5 @@
 from stable_baselines.common import make_vec_env
+from stable_baselines.common.callbacks import EvalCallback
 from stable_baselines.common.vec_env import VecFrameStack, SubprocVecEnv
 
 from constants import *
@@ -19,7 +20,7 @@ def make_env(model=None):
     return LuxEnvironment(
         configs=CONFIGS,
         learning_agent=LuxAgent(model=model),
-        opponent_agent=opponent_agent)
+        opponent_agent=LuxAgent(mode="inference", model=model))
 
 
 def make_training_env(num_envs=NUM_ENVS):
@@ -37,7 +38,7 @@ def train():
     :return:
     """
 
-    train_env = SubprocVecEnv([make_env for i in range(12)])
+    train_env = SubprocVecEnv([make_env for i in range(NUM_ENVS)])
     # model = make_model(env=train_env)
 
     train_env = VecFrameStack(train_env, n_stack=4)
@@ -56,7 +57,7 @@ def train():
     opponent_replay = Agent()
     callbacks.append(
         SaveReplayAndModelCallback(
-            save_freq=100,
+            save_freq=SAVE_FREQ,
             save_path=CHECKPOINT_PATH,
             name_prefix=TIME_STAMP,
             replay_env=LuxEnvironment(
@@ -67,6 +68,23 @@ def train():
             replay_num_episodes=5
         )
     )
+
+    if NUM_ENVS > 1:
+        # An evaluation environment is needed to measure multi-env setups. Use a fixed 4 envs.
+        eval_env = make_vec_env(make_env, 1)
+        eval_env = VecFrameStack(eval_env, n_stack=4)
+
+        callbacks.append(
+            EvalCallback(
+                eval_env,
+                best_model_save_path=CALLBACKS_PATH,
+                log_path=CALLBACKS_PATH,
+                eval_freq=NUM_STEPS * 10,  # Run it every 2 training iterations
+                n_eval_episodes=NUM_EVAL_GAMES,
+                deterministic=False,
+                render=False
+            )
+        )
 
     print("Training Model...")
     model.learn(

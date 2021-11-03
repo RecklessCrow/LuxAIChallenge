@@ -1,5 +1,6 @@
 from multiprocessing import freeze_support
-
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 from train import train
 
 

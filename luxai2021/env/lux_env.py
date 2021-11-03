@@ -53,7 +53,6 @@ class SaveReplayAndModelCallback(BaseCallback):
 
             # Run a bunch of games to creates replays using the replay environment
             for i in range(self.replay_num_episodes):
-                print("RUNNING CALLBACK GAMES")
                 self.replay_env.game.configs["seed"] = i
                 self.replay_env.set_replay_path(self.save_path, f"{self.name_prefix}_step{self.num_timesteps}_seed{i}")
 

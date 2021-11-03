@@ -3,7 +3,7 @@ from functools import partial
 
 from gym import spaces
 from gym.spaces import flatten_space, flatten
-
+from collections import deque
 from constants import *
 from luxai2021.env.agent import AgentWithModel
 from luxai2021.game.actions import *
@@ -240,10 +240,11 @@ class LuxAgent(AgentWithModel):
         })
 
         self.observation_space = flatten_space(self.observation_space)
-
-        print(self.observation_space)
+        self.observation_vector = deque([np.zeros(self.observation_space.shape[0]) for i in range(4)], maxlen=4)
 
     def game_start(self, game):
+        self.observation_vector = deque([np.zeros(self.observation_space.shape[0]) for i in range(4)], maxlen=4)
+
         self.last_unit_count = STARTING_UNITS
         self.last_unit_count_opponent = STARTING_UNITS
         
@@ -290,6 +291,7 @@ class LuxAgent(AgentWithModel):
         obs = np.concatenate([np.array(elem).flatten() for elem in list(obs_dict.values())])
 
         # print(obs)
+        self.observation_vector.append(obs)
 
         return obs
     
@@ -474,6 +476,7 @@ class LuxAgent(AgentWithModel):
                 obs = self.get_observation(game, unit, None, unit.team, new_turn)
                 # IMPORTANT: You can change deterministic=True to disable randomness in model inference. Generally,
                 # I've found the agents get stuck sometimes if they are fully deterministic.
+                obs = np.concatenate(self.observation_vector)
                 action_code, _states = self.model.predict(obs, deterministic=False)
                 if action_code is not None:
                     actions.append(
